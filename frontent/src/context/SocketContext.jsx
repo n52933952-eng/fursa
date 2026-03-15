@@ -12,7 +12,8 @@ export function SocketContextProvider({ children }) {
   useEffect(() => {
     if (!user?._id) return
 
-    const newSocket = io('http://localhost:5000', {
+    const serverUrl = import.meta.env.PROD ? window.location.origin : 'http://localhost:5000'
+    const newSocket = io(serverUrl, {
       query: { userId: user._id }
     })
 

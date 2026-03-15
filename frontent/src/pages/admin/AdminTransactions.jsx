@@ -47,9 +47,8 @@ export default function AdminTransactions() {
   useEffect(() => {
     const fetchTx = async () => {
       try {
-        // Fetch all wallets or a transactions endpoint
         const { data } = await axios.get('/api/wallet/all', { withCredentials: true })
-        setTransactions(data || [])
+        setTransactions(Array.isArray(data) ? data : [])
       } catch {
         setTransactions([])
       }
