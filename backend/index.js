@@ -26,6 +26,7 @@ import notificationRoute from './routes/notification.js'
 import deliverableRoute from './routes/deliverable.js'
 import aiRoute from './routes/ai.js'
 import invoiceRoute from './routes/invoice.js'
+import contractRoute from './routes/contract.js'
 
 
 app.use(express.json())
@@ -59,6 +60,7 @@ app.use("/api/notification", notificationRoute)
 app.use("/api/deliverable", deliverableRoute)
 app.use("/api/ai", aiRoute)
 app.use("/api/invoice", invoiceRoute)
+app.use("/api/contract", contractRoute)
 app.use("/uploads", express.static("uploads"))
 
 // Serve frontend — go up one level from backend/ to find frontent/dist
