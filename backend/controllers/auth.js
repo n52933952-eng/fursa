@@ -1,0 +1,118 @@
+import User from '../models/User.js'
+import Wallet from '../models/Wallet.js'
+import bcryptjs from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import nodemailer from 'nodemailer'
+import crypto from 'crypto'
+
+export const signup = async (req, res) => {
+    try {
+        const { username, email, password, role } = req.body
+
+        const existingUser = await User.findOne({ $or: [{ email }, { username }] })
+        if (existingUser) return res.status(400).json({ error: "Username or email already exists" })
+
+        const hashedPassword = bcryptjs.hashSync(password, 10)
+        const newUser = new User({ username, email, password: hashedPassword, role: role || 'client' })
+        await newUser.save()
+
+        // Create wallet for every new user
+        await new Wallet({ userId: newUser._id }).save()
+
+        const { password: pass, ...rest } = newUser._doc
+        res.status(201).json(rest)
+    } catch (error) {
+        res.status(500).json({ error: "Signup failed" })
+    }
+}
+
+export const login = async (req, res) => {
+    try {
+        const { email, password } = req.body
+
+        const user = await User.findOne({ email })
+        if (!user) return res.status(400).json({ error: "Invalid email or password" })
+        if (user.isBanned) return res.status(403).json({ error: "Account banned" })
+
+        const isCorrect = bcryptjs.compareSync(password, user.password)
+        if (!isCorrect) return res.status(400).json({ error: "Invalid email or password" })
+
+        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '15d' })
+        const { password: pass, ...rest } = user._doc
+
+        res.status(200).cookie("access", token, {
+            httpOnly: true,
+            maxAge: 15 * 24 * 60 * 60 * 1000,
+            sameSite: "strict"
+        }).json(rest)
+    } catch (error) {
+        res.status(500).json({ error: "Login failed" })
+    }
+}
+
+export const logout = (req, res) => {
+    try {
+        res.clearCookie("access").status(200).json({ message: "Logged out successfully" })
+    } catch (error) {
+        res.status(500).json({ error: "Logout failed" })
+    }
+}
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+})
+
+export const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body
+        const user = await User.findOne({ email })
+        if (!user) return res.status(404).json({ error: "No account with that email" })
+
+        const token = crypto.randomBytes(32).toString('hex')
+        user.resetPasswordToken = token
+        user.resetPasswordExpires = Date.now() + 3600000 // 1 hour
+        await user.save()
+
+        const resetUrl = `${process.env.CLIENT_URL}/reset-password/${token}`
+        await transporter.sendMail({
+            to: email,
+            subject: 'Fursa - Reset Your Password / إعادة تعيين كلمة المرور',
+            html: `
+                <h2>Reset Your Password</h2>
+                <p>Click the link below to reset your password. This link expires in 1 hour.</p>
+                <a href="${resetUrl}">${resetUrl}</a>
+                <hr/>
+                <h2>إعادة تعيين كلمة المرور</h2>
+                <p>انقر على الرابط أدناه لإعادة تعيين كلمة المرور. ينتهي هذا الرابط خلال ساعة.</p>
+                <a href="${resetUrl}">${resetUrl}</a>
+            `
+        })
+        res.status(200).json({ message: "Reset email sent" })
+    } catch (error) {
+        res.status(500).json({ error: "Failed to send reset email" })
+    }
+}
+
+export const resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body
+        const user = await User.findOne({
+            resetPasswordToken: token,
+            resetPasswordExpires: { $gt: Date.now() }
+        })
+        if (!user) return res.status(400).json({ error: "Invalid or expired token" })
+
+        user.password = bcryptjs.hashSync(newPassword, 10)
+        user.resetPasswordToken = undefined
+        user.resetPasswordExpires = undefined
+        await user.save()
+
+        res.status(200).json({ message: "Password reset successfully" })
+    } catch (error) {
+        res.status(500).json({ error: "Failed to reset password" })
+    }
+}
