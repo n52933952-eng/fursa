@@ -3,7 +3,7 @@ import Wallet from '../models/Wallet.js'
 import Transaction from '../models/Transaction.js'
 import Project from '../models/Project.js'
 import Notification from '../models/Notification.js'
-import { getRecipientSocketId, io } from '../socket/socket.js'
+import { getRecipientSocketId, io, emitToAdmins } from '../socket/socket.js'
 
 export const createMilestones = async (req, res) => {
     try {
@@ -70,7 +70,7 @@ export const releasePayment = async (req, res) => {
             { upsert: true }
         )
 
-        await new Transaction({
+        const releaseTx = await new Transaction({
             fromUserId: req.user._id,
             toUserId: project.freelancerId,
             amount: milestone.amount,
@@ -88,8 +88,21 @@ export const releasePayment = async (req, res) => {
             link: `/wallet`
         })
         await notification.save()
+
         const freelancerSocketId = getRecipientSocketId(project.freelancerId.toString())
-        if (freelancerSocketId) io.to(freelancerSocketId).emit("newNotification", notification)
+        if (freelancerSocketId) {
+            // Send the notification
+            io.to(freelancerSocketId).emit('newNotification', notification)
+            // Also fire dedicated paymentReleased event so mobile wallet refreshes instantly
+            io.to(freelancerSocketId).emit('paymentReleased', {
+                amount: milestone.amount,
+                milestoneTitle: milestone.title,
+                projectTitle: project.title,
+            })
+        }
+
+        // Update admin dashboard in real-time
+        emitToAdmins('adminUpdate', { type: 'newTransaction', data: releaseTx })
 
         res.status(200).json({ message: "Payment released successfully" })
     } catch (error) {

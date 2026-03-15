@@ -96,7 +96,16 @@ export const acceptProposal = async (req, res) => {
         })
         await notification.save()
         const freelancerSocketId = getRecipientSocketId(proposal.freelancerId.toString())
-        if (freelancerSocketId) io.to(freelancerSocketId).emit("newNotification", notification)
+        if (freelancerSocketId) {
+            io.to(freelancerSocketId).emit('newNotification', notification)
+            // Dedicated event so mobile MyBids screen updates instantly
+            io.to(freelancerSocketId).emit('proposalAccepted', {
+                proposalId: proposal._id,
+                projectId:  proposal.projectId,
+                projectTitle: project.title,
+                bid: proposal.bid,
+            })
+        }
 
         res.status(200).json({ message: "Proposal accepted", contract })
     } catch (error) {
