@@ -56,10 +56,17 @@ app.use("/api/ai", aiRoute)
 app.use("/api/invoice", invoiceRoute)
 app.use("/uploads", express.static("uploads"))
 
-app.use(express.static(path.join(__dirname, '/frontent/dist')))
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'frontent', 'dist', 'index.html'))
-})
+// Serve frontend only if built (production with frontend bundled)
+import fs from 'fs'
+const frontendDist = path.join(__dirname, 'frontent', 'dist')
+if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist))
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(frontendDist, 'index.html'))
+    })
+} else {
+    app.get('/', (req, res) => res.json({ message: 'Fursa API is running 🚀', version: '1.0.0' }))
+}
 
 server.listen(process.env.PORT || 5000, () => {
     console.log(`server is running on port ${process.env.PORT || 5000}`)
