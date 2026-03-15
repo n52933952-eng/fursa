@@ -56,9 +56,9 @@ app.use("/api/ai", aiRoute)
 app.use("/api/invoice", invoiceRoute)
 app.use("/uploads", express.static("uploads"))
 
-// Serve frontend only if built (production with frontend bundled)
+// Serve frontend — go up one level from backend/ to find frontent/dist
 import fs from 'fs'
-const frontendDist = path.join(__dirname, 'frontent', 'dist')
+const frontendDist = path.join(__dirname, '..', 'frontent', 'dist')
 if (fs.existsSync(frontendDist)) {
     app.use(express.static(frontendDist))
     app.get('*', (req, res) => {
