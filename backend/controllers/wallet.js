@@ -1,5 +1,6 @@
 import Wallet from '../models/Wallet.js'
 import Transaction from '../models/Transaction.js'
+import { emitToAdmins } from '../socket/socket.js'
 
 export const getWallet = async (req, res) => {
     try {
@@ -30,12 +31,13 @@ export const deposit = async (req, res) => {
             { $inc: { balance: amount } },
             { upsert: true }
         )
-        await new Transaction({
+        const depositTx = await new Transaction({
             toUserId: req.user._id,
             amount,
             type: 'deposit',
             description: 'Wallet deposit'
         }).save()
+        emitToAdmins('adminUpdate', { type: 'newTransaction', data: depositTx })
         res.status(200).json({ message: "Deposit successful" })
     } catch (error) {
         res.status(500).json({ error: "Deposit failed" })
@@ -50,12 +52,13 @@ export const withdraw = async (req, res) => {
             return res.status(400).json({ error: "Insufficient balance" })
 
         await Wallet.findOneAndUpdate({ userId: req.user._id }, { $inc: { balance: -amount } })
-        await new Transaction({
+        const withdrawTx = await new Transaction({
             fromUserId: req.user._id,
             amount,
             type: 'withdrawal',
             description: 'Wallet withdrawal'
         }).save()
+        emitToAdmins('adminUpdate', { type: 'newTransaction', data: withdrawTx })
         res.status(200).json({ message: "Withdrawal successful" })
     } catch (error) {
         res.status(500).json({ error: "Withdrawal failed" })

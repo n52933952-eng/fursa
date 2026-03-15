@@ -3,7 +3,8 @@ import {
   Table, Thead, Tbody, Tr, Th, Td, Spinner, Select, SimpleGrid, Avatar
 } from '@chakra-ui/react'
 import { FiSearch, FiBriefcase, FiClock, FiDollarSign, FiCheckCircle, FiAlertCircle } from 'react-icons/fi'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useContext } from 'react'
+import { SocketContext } from '../../context/SocketContext'
 import axios from 'axios'
 
 const statusColor = {
@@ -18,6 +19,7 @@ export default function AdminProjects() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const { socket } = useContext(SocketContext)
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -29,6 +31,18 @@ export default function AdminProjects() {
     }
     fetchProjects()
   }, [])
+
+  // Real-time: new project created
+  useEffect(() => {
+    if (!socket) return
+    const handle = ({ type, data }) => {
+      if (type === 'newProject') {
+        setProjects(prev => [data, ...prev])
+      }
+    }
+    socket.on('adminUpdate', handle)
+    return () => socket.off('adminUpdate', handle)
+  }, [socket])
 
   const filtered = projects.filter(p => {
     const matchSearch = !search || p.title?.toLowerCase().includes(search.toLowerCase())

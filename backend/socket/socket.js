@@ -19,16 +19,27 @@ export const getRecipientSocketId = (recipientId) => {
     return userData ? userData.socketId : null
 }
 
+// Broadcast an event to all connected admin sockets (admin-room)
+export const emitToAdmins = (event, data) => {
+    io.to('admin-room').emit(event, data)
+}
+
 io.on("connection", socket => {
     console.log("socket connected", socket.id)
 
     const userId = socket.handshake.query.userId
+    const role   = socket.handshake.query.role
 
     if (userId && userId !== "undefined") {
         userSocketMap[userId] = {
             socketId: socket.id,
             onlineAt: Date.now()
         }
+    }
+
+    // Admins join their own room for targeted broadcasts
+    if (role === 'admin') {
+        socket.join('admin-room')
     }
 
     const onlineArray = Object.entries(userSocketMap).map(([id, data]) => ({

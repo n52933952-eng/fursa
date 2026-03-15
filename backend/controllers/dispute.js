@@ -1,5 +1,6 @@
 import Dispute from '../models/Dispute.js'
 import Project from '../models/Project.js'
+import { emitToAdmins } from '../socket/socket.js'
 
 export const createDispute = async (req, res) => {
     try {
@@ -15,6 +16,10 @@ export const createDispute = async (req, res) => {
         })
         await dispute.save()
         await Project.findByIdAndUpdate(projectId, { status: 'disputed' })
+
+        // Notify admin dashboard in real-time
+        emitToAdmins('adminUpdate', { type: 'newDispute', data: dispute })
+
         res.status(201).json(dispute)
     } catch (error) {
         res.status(500).json({ error: "Failed to create dispute" })

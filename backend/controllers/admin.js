@@ -5,14 +5,105 @@ import Dispute from '../models/Dispute.js'
 
 export const getStats = async (req, res) => {
     try {
-        const totalUsers = await User.countDocuments()
-        const activeProjects = await Project.countDocuments({ status: 'in-progress' })
-        const openDisputes = await Dispute.countDocuments({ status: 'open' })
-        const transactions = await Transaction.find({ type: 'release' })
-        const totalRevenue = transactions.reduce((sum, t) => sum + t.amount, 0)
-        res.status(200).json({ totalUsers, activeProjects, openDisputes, totalRevenue })
+        const startOfMonth = new Date()
+        startOfMonth.setDate(1)
+        startOfMonth.setHours(0, 0, 0, 0)
+
+        const [totalUsers, totalProjects, activeProjects, openDisputes, newUsersThisMonth] = await Promise.all([
+            User.countDocuments(),
+            Project.countDocuments(),
+            Project.countDocuments({ status: 'in-progress' }),
+            Dispute.countDocuments({ status: 'open' }),
+            User.countDocuments({ createdAt: { $gte: startOfMonth } })
+        ])
+
+        const releaseTransactions = await Transaction.find({ type: 'release' })
+        const totalRevenue = releaseTransactions.reduce((sum, t) => sum + t.amount, 0)
+
+        res.status(200).json({ totalUsers, totalProjects, activeProjects, openDisputes, totalRevenue, newUsersThisMonth })
     } catch (error) {
         res.status(500).json({ error: "Failed to get stats" })
+    }
+}
+
+export const getMonthlyRevenue = async (req, res) => {
+    try {
+        const sixMonthsAgo = new Date()
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+
+        const [txData, userCounts] = await Promise.all([
+            Transaction.aggregate([
+                { $match: { createdAt: { $gte: sixMonthsAgo } } },
+                {
+                    $group: {
+                        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+                        revenue: { $sum: '$amount' },
+                        fees: {
+                            $sum: {
+                                $cond: [{ $eq: ['$type', 'release'] }, { $multiply: ['$amount', 0.1] }, 0]
+                            }
+                        },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { '_id.year': 1, '_id.month': 1 } }
+            ]),
+            User.aggregate([
+                { $match: { createdAt: { $gte: sixMonthsAgo } } },
+                {
+                    $group: {
+                        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+                        users: { $sum: 1 }
+                    }
+                }
+            ])
+        ])
+
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+        const userMap = {}
+        userCounts.forEach(u => {
+            userMap[`${u._id.year}-${u._id.month}`] = u.users
+        })
+
+        const result = txData.map(d => ({
+            month: monthNames[d._id.month - 1],
+            revenue: Math.round(d.revenue),
+            fees: Math.round(d.fees),
+            users: userMap[`${d._id.year}-${d._id.month}`] || 0,
+            count: d.count
+        }))
+
+        res.status(200).json(result)
+    } catch (error) {
+        res.status(500).json({ error: "Failed to get monthly revenue" })
+    }
+}
+
+export const getProjectsByCategory = async (req, res) => {
+    try {
+        const data = await Project.aggregate([
+            { $group: { _id: '$category', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 8 }
+        ])
+        res.status(200).json(data.map(d => ({ name: d._id || 'Other', count: d.count })))
+    } catch (error) {
+        res.status(500).json({ error: "Failed to get category stats" })
+    }
+}
+
+export const getAllTransactions = async (req, res) => {
+    try {
+        const transactions = await Transaction.find()
+            .populate('fromUserId', 'username email')
+            .populate('toUserId', 'username email')
+            .populate('projectId', 'title')
+            .sort({ createdAt: -1 })
+            .limit(200)
+        res.status(200).json(transactions)
+    } catch (error) {
+        res.status(500).json({ error: "Failed to get transactions" })
     }
 }
 
@@ -27,12 +118,14 @@ export const getAllUsers = async (req, res) => {
 
 export const banUser = async (req, res) => {
     try {
-        const user = await User.findByIdAndUpdate(
-            req.params.id, { isBanned: true }, { new: true }
-        ).select("-password")
-        res.status(200).json({ message: "User banned", user })
+        const user = await User.findById(req.params.id)
+        if (!user) return res.status(404).json({ error: "User not found" })
+        user.isBanned = !user.isBanned
+        await user.save()
+        const { password, ...rest } = user._doc
+        res.status(200).json(rest)
     } catch (error) {
-        res.status(500).json({ error: "Failed to ban user" })
+        res.status(500).json({ error: "Failed to update user status" })
     }
 }
 

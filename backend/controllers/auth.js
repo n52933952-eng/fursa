@@ -4,6 +4,7 @@ import bcryptjs from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import nodemailer from 'nodemailer'
 import crypto from 'crypto'
+import { emitToAdmins } from '../socket/socket.js'
 
 export const signup = async (req, res) => {
     try {
@@ -20,6 +21,10 @@ export const signup = async (req, res) => {
         await new Wallet({ userId: newUser._id }).save()
 
         const { password: pass, ...rest } = newUser._doc
+
+        // Notify admin dashboard in real-time
+        emitToAdmins('adminUpdate', { type: 'newUser', data: rest })
+
         res.status(201).json(rest)
     } catch (error) {
         res.status(500).json({ error: "Signup failed" })

@@ -5,7 +5,8 @@ import {
   ModalHeader, ModalBody, ModalFooter, ModalCloseButton, useDisclosure
 } from '@chakra-ui/react'
 import { FiSearch, FiUsers, FiUserX, FiUserCheck, FiEye, FiShield } from 'react-icons/fi'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useContext } from 'react'
+import { SocketContext } from '../../context/SocketContext'
 import axios from 'axios'
 
 const roleBadge = { admin: ['purple', '#9F7AEA'], freelancer: ['#4299E1', 'rgba(66,153,225,0.15)'], client: ['#48BB78', 'rgba(72,187,120,0.15)'] }
@@ -18,6 +19,7 @@ export default function AdminUsers() {
   const [selected, setSelected] = useState(null)
   const { isOpen, onOpen, onClose } = useDisclosure()
   const toast = useToast()
+  const { socket } = useContext(SocketContext)
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -31,6 +33,21 @@ export default function AdminUsers() {
   }
 
   useEffect(() => { fetchUsers() }, [])
+
+  // Real-time: new user registered
+  useEffect(() => {
+    if (!socket) return
+    const handle = ({ type, data }) => {
+      if (type === 'newUser') {
+        setUsers(prev => [data, ...prev])
+      }
+      if (type === 'userBanned') {
+        setUsers(prev => prev.map(u => u._id === data._id ? data : u))
+      }
+    }
+    socket.on('adminUpdate', handle)
+    return () => socket.off('adminUpdate', handle)
+  }, [socket])
 
   const handleBan = async (id, isBanned) => {
     try {

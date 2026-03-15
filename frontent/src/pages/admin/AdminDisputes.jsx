@@ -5,7 +5,8 @@ import {
   ModalFooter, ModalCloseButton, useDisclosure, Textarea, useToast, Select
 } from '@chakra-ui/react'
 import { FiAlertTriangle, FiCheckCircle, FiClock, FiMessageSquare, FiEye } from 'react-icons/fi'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useContext } from 'react'
+import { SocketContext } from '../../context/SocketContext'
 import axios from 'axios'
 
 const statusColor = {
@@ -22,6 +23,7 @@ export default function AdminDisputes() {
   const [statusFilter, setStatusFilter] = useState('')
   const { isOpen, onOpen, onClose } = useDisclosure()
   const toast = useToast()
+  const { socket } = useContext(SocketContext)
 
   const fetchDisputes = async () => {
     setLoading(true)
@@ -33,6 +35,18 @@ export default function AdminDisputes() {
   }
 
   useEffect(() => { fetchDisputes() }, [])
+
+  // Real-time: new dispute filed
+  useEffect(() => {
+    if (!socket) return
+    const handle = ({ type, data }) => {
+      if (type === 'newDispute') {
+        setDisputes(prev => [data, ...prev])
+      }
+    }
+    socket.on('adminUpdate', handle)
+    return () => socket.off('adminUpdate', handle)
+  }, [socket])
 
   const handleResolve = async () => {
     if (!resolution.trim()) return

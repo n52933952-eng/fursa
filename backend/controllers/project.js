@@ -1,6 +1,6 @@
 import Project from '../models/Project.js'
 import Notification from '../models/Notification.js'
-import { getRecipientSocketId, io } from '../socket/socket.js'
+import { getRecipientSocketId, io, emitToAdmins } from '../socket/socket.js'
 
 export const createProject = async (req, res) => {
     try {
@@ -11,6 +11,10 @@ export const createProject = async (req, res) => {
             clientId: req.user._id
         })
         await newProject.save()
+
+        // Notify admin dashboard in real-time
+        emitToAdmins('adminUpdate', { type: 'newProject', data: newProject })
+
         res.status(201).json(newProject)
     } catch (error) {
         res.status(500).json({ error: "Failed to create project" })

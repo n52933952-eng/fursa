@@ -14,7 +14,7 @@ export function SocketContextProvider({ children }) {
 
     const serverUrl = import.meta.env.PROD ? window.location.origin : 'http://localhost:5000'
     const newSocket = io(serverUrl, {
-      query: { userId: user._id }
+      query: { userId: user._id, role: user.role }
     })
 
     setSocket(newSocket)
