@@ -36,6 +36,17 @@ export const submitProposal = async (req, res) => {
     }
 }
 
+export const getMyProposals = async (req, res) => {
+    try {
+        const proposals = await Proposal.find({ freelancerId: req.user._id })
+            .populate('projectId', 'title budget status category clientId')
+            .sort({ createdAt: -1 })
+        res.status(200).json(proposals)
+    } catch (error) {
+        res.status(500).json({ error: "Failed to get proposals" })
+    }
+}
+
 export const getProposalsByProject = async (req, res) => {
     try {
         const proposals = await Proposal.find({ projectId: req.params.projectId })
