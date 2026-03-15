@@ -20,12 +20,14 @@ export const signup = async (req, res) => {
         // Create wallet for every new user
         await new Wallet({ userId: newUser._id }).save()
 
+        // Generate token for mobile auto-login after register
+        const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '15d' })
         const { password: pass, ...rest } = newUser._doc
 
         // Notify admin dashboard in real-time
         emitToAdmins('adminUpdate', { type: 'newUser', data: rest })
 
-        res.status(201).json(rest)
+        res.status(201).json({ ...rest, token })
     } catch (error) {
         res.status(500).json({ error: "Signup failed" })
     }
@@ -45,11 +47,12 @@ export const login = async (req, res) => {
         const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '15d' })
         const { password: pass, ...rest } = user._doc
 
+        // Set cookie for web dashboard + include token in body for mobile app
         res.status(200).cookie("access", token, {
             httpOnly: true,
             maxAge: 15 * 24 * 60 * 60 * 1000,
             sameSite: "strict"
-        }).json(rest)
+        }).json({ ...rest, token })
     } catch (error) {
         res.status(500).json({ error: "Login failed" })
     }

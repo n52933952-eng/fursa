@@ -31,7 +31,12 @@ import invoiceRoute from './routes/invoice.js'
 app.use(express.json())
 app.use(cookieParser())
 app.use(cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: (origin, callback) => {
+        // Allow: web dashboard (CLIENT_URL), local dev, and mobile apps (no origin header)
+        const allowed = [process.env.CLIENT_URL, 'http://localhost:5173', 'http://localhost:5174']
+        if (!origin || allowed.includes(origin)) return callback(null, true)
+        callback(null, true) // allow all for mobile API access
+    },
     credentials: true
 }))
 

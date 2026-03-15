@@ -3,7 +3,12 @@ import User from '../models/User.js'
 
 export const verifyToken = async (req, res, next) => {
     try {
-        const token = req.cookies.access
+        // Web dashboard sends cookie; mobile app sends Authorization: Bearer <token>
+        let token = req.cookies?.access
+        if (!token) {
+            const auth = req.headers.authorization
+            if (auth && auth.startsWith('Bearer ')) token = auth.split(' ')[1]
+        }
         if (!token) return res.status(401).json({ error: "Unauthorized - no token" })
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
