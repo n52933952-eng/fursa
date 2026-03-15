@@ -39,3 +39,24 @@ export const searchFreelancers = async (req, res) => {
         res.status(500).json({ error: "Search failed" })
     }
 }
+
+// Search all users by username (for starting new chat conversations)
+export const searchUsers = async (req, res) => {
+    try {
+        const { query } = req.query
+        if (!query || query.trim().length < 1) return res.status(200).json([])
+
+        const users = await User.find({
+            _id: { $ne: req.user._id }, // exclude self
+            isBanned: false,
+            role: { $ne: 'admin' },     // exclude admins
+            username: { $regex: query.trim(), $options: 'i' }
+        })
+        .select('_id username role rating profilePic skills')
+        .limit(15)
+
+        res.status(200).json(users)
+    } catch (error) {
+        res.status(500).json({ error: "Search failed" })
+    }
+}
