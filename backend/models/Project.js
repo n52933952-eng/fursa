@@ -11,7 +11,8 @@ const ProjectSchema = new mongoose.Schema({
     attachments: [{ type: String }],
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     freelancerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    status: { type: String, enum: ['open', 'in-progress', 'completed', 'cancelled', 'disputed'], default: 'open' },
+    status: { type: String, enum: ['open', 'in-progress', 'completed', 'cancelled', 'disputed', 'pending-approval'], default: 'open' },
+    pendingAmount: { type: Number, default: 0 },
     proposals: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Proposal' }],
     contractId: { type: mongoose.Schema.Types.ObjectId, ref: 'Contract', default: null },
 }, { timestamps: true })
