@@ -4,8 +4,15 @@ import User from '../models/User.js'
 export const createReview = async (req, res) => {
     try {
         const { revieweeId, projectId, rating, comment } = req.body
-        const existing = await Review.findOne({ reviewerId: req.user._id, projectId })
-        if (existing) return res.status(400).json({ error: "Already reviewed this project" })
+        if (!revieweeId) return res.status(400).json({ error: "Freelancer ID is required" })
+        if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: "Rating must be between 1 and 5" })
+
+        // Prevent duplicate: one review per client per freelancer (or per project if provided)
+        const dupQuery = projectId
+            ? { reviewerId: req.user._id, projectId }
+            : { reviewerId: req.user._id, revieweeId }
+        const existing = await Review.findOne(dupQuery)
+        if (existing) return res.status(400).json({ error: "You have already reviewed this freelancer" })
 
         const review = new Review({ reviewerId: req.user._id, revieweeId, projectId, rating, comment })
         await review.save()
