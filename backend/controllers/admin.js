@@ -8,7 +8,7 @@ export const getStats = async (req, res) => {
         const startOfMonth = new Date()
         startOfMonth.setDate(1)
         startOfMonth.setHours(0, 0, 0, 0)
-
+         
         const [totalUsers, totalProjects, activeProjects, openDisputes, newUsersThisMonth] = await Promise.all([
             User.countDocuments(),
             Project.countDocuments(),
@@ -29,6 +29,7 @@ export const getStats = async (req, res) => {
 export const getMonthlyRevenue = async (req, res) => {
     try {
         const sixMonthsAgo = new Date()
+        console.log(sixMonthsAgo)
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
 
         const [txData, userCounts] = await Promise.all([
