@@ -1,6 +1,7 @@
 import Message from '../models/Message.js'
 import Conversation from '../models/Conversation.js'
 import { getRecipientSocketId, io } from '../socket/socket.js'
+import { pushNewMessage } from '../services/fcm.js'
 
 export const sendMessage = async (req, res) => {
     try {
@@ -27,7 +28,17 @@ export const sendMessage = async (req, res) => {
         await Conversation.findByIdAndUpdate(conversation._id, { lastMessage: message._id })
 
         const recipientSocketId = getRecipientSocketId(recipientId)
-        if (recipientSocketId) io.to(recipientSocketId).emit("newMessage", message)
+        if (recipientSocketId) {
+            io.to(recipientSocketId).emit("newMessage", message)
+        } else {
+            // Recipient is offline — send push notification
+            pushNewMessage(
+                recipientId,
+                req.user.username,
+                text || '📎 Attachment',
+                conversation._id
+            )
+        }
 
         res.status(201).json(message)
     } catch (error) {

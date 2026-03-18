@@ -20,6 +20,11 @@ const UserSchema = new mongoose.Schema({
     totalProjects: { type: Number, default: 0 },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
+    // Google / Firebase auth
+    googleId:     { type: String, default: null },
+    authProvider: { type: String, enum: ['local', 'google'], default: 'local' },
+    // Push notifications (FCM)
+    fcmToken:     { type: String, default: null },
 }, { timestamps: true })
 
 const User = mongoose.model("User", UserSchema)

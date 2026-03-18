@@ -124,3 +124,73 @@ export const resetPassword = async (req, res) => {
         res.status(500).json({ error: "Failed to reset password" })
     }
 }
+
+// ─── Google Sign-In ───────────────────────────────────────────────────────────
+// Mobile sends: { email, name, googleId, profilePic, role }
+// We trust the mobile (it already verified with Firebase client-side).
+// Role is required for NEW users only.
+export const googleSignIn = async (req, res) => {
+    try {
+        const { email, name, googleId, profilePic, role } = req.body
+
+        if (!email || !googleId) {
+            return res.status(400).json({ error: "Email and Google ID are required" })
+        }
+
+        // 1. Find existing user by googleId or email
+        let user = await User.findOne({ $or: [{ googleId }, { email: email.toLowerCase() }] })
+
+        if (user) {
+            // ── Existing user: just log in ──
+            // Update googleId if they had a local account with same email
+            if (!user.googleId) {
+                user.googleId     = googleId
+                user.authProvider = 'google'
+            }
+            if (profilePic && !user.profilePic) user.profilePic = profilePic
+            await user.save()
+
+        } else {
+            // ── New user: role is required ──
+            if (!role || !['client', 'freelancer'].includes(role)) {
+                return res.status(400).json({ error: "role_required" })
+            }
+
+            // Generate unique username from email
+            let baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')
+            let username = baseUsername
+            let counter  = 1
+            while (await User.findOne({ username })) {
+                username = `${baseUsername}${counter++}`
+            }
+
+            user = new User({
+                username,
+                email:        email.toLowerCase(),
+                password:     bcryptjs.hashSync(Math.random().toString(36), 10), // unused placeholder
+                role:         role,
+                profilePic:   profilePic || '',
+                googleId,
+                authProvider: 'google',
+            })
+            await user.save()
+
+            // Create wallet for new user
+            const Wallet = (await import('../models/Wallet.js')).default
+            await new Wallet({ userId: user._id }).save()
+
+            emitToAdmins('adminUpdate', { type: 'newUser', data: user })
+            console.log('✅ New Google user created:', username, role)
+        }
+
+        // 2. Generate JWT (same as regular login)
+        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '15d' })
+        const { password: _pw, ...rest } = user._doc
+
+        res.status(200).json({ ...rest, token })
+
+    } catch (error) {
+        console.error('Google Sign-In error:', error)
+        res.status(500).json({ error: "Google Sign-In failed" })
+    }
+}

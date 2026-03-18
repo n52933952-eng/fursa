@@ -27,6 +27,7 @@ import deliverableRoute from './routes/deliverable.js'
 import aiRoute from './routes/ai.js'
 import invoiceRoute from './routes/invoice.js'
 import contractRoute from './routes/contract.js'
+import { initializeFCM } from './services/fcm.js'
 
 
 app.use(express.json())
@@ -74,6 +75,9 @@ if (fs.existsSync(frontendDist)) {
 } else {
     app.get('/', (req, res) => res.json({ message: 'Fursa API is running 🚀', version: '1.0.0' }))
 }
+
+// Initialize Firebase push notifications
+initializeFCM()
 
 server.listen(process.env.PORT || 5000, () => {
     console.log(`server is running on port ${process.env.PORT || 5000}`)

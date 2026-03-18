@@ -5,6 +5,7 @@ import Wallet from '../models/Wallet.js'
 import Transaction from '../models/Transaction.js'
 import Notification from '../models/Notification.js'
 import { getRecipientSocketId, io, emitToAdmins } from '../socket/socket.js'
+import { pushNewProposal, pushProposalAccepted } from '../services/fcm.js'
 
 export const submitProposal = async (req, res) => {
     try {
@@ -30,7 +31,12 @@ export const submitProposal = async (req, res) => {
         })
         await notification.save()
         const clientSocketId = getRecipientSocketId(project.clientId.toString())
-        if (clientSocketId) io.to(clientSocketId).emit("newNotification", notification)
+        if (clientSocketId) {
+            io.to(clientSocketId).emit("newNotification", notification)
+        } else {
+            // Client is offline — push notification
+            pushNewProposal(project.clientId, req.user.username, project.title, projectId)
+        }
 
         res.status(201).json(proposal)
     } catch (error) {
@@ -128,6 +134,9 @@ export const acceptProposal = async (req, res) => {
                 projectTitle: project.title,
                 bid:          proposal.bid,
             })
+        } else {
+            // Freelancer is offline — push notification
+            pushProposalAccepted(proposal.freelancerId, project.title, proposal.projectId)
         }
 
         // Notify CLIENT — money was deducted from their wallet into escrow

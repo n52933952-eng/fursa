@@ -40,6 +40,17 @@ export const searchFreelancers = async (req, res) => {
     }
 }
 
+export const saveFcmToken = async (req, res) => {
+    try {
+        const { token } = req.body
+        if (!token) return res.status(400).json({ error: "Token is required" })
+        await User.findByIdAndUpdate(req.user._id, { fcmToken: token })
+        res.status(200).json({ message: "FCM token saved" })
+    } catch (error) {
+        res.status(500).json({ error: "Failed to save FCM token" })
+    }
+}
+
 // Search all users by username (for starting new chat conversations)
 export const searchUsers = async (req, res) => {
     try {

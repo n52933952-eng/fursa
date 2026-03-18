@@ -5,6 +5,7 @@ import Wallet from '../models/Wallet.js'
 import Transaction from '../models/Transaction.js'
 import Notification from '../models/Notification.js'
 import { getRecipientSocketId, io, emitToAdmins } from '../socket/socket.js'
+import { pushPaymentReleased, pushProjectComplete } from '../services/fcm.js'
 
 export const createProject = async (req, res) => {
     try {
@@ -143,7 +144,11 @@ export const markProjectComplete = async (req, res) => {
         })
         await clientNotif.save()
         const clientSocket = getRecipientSocketId(project.clientId.toString())
-        if (clientSocket) io.to(clientSocket).emit('newNotification', clientNotif)
+        if (clientSocket) {
+            io.to(clientSocket).emit('newNotification', clientNotif)
+        } else {
+            pushProjectComplete(project.clientId, req.user.username, project.title, project._id)
+        }
 
         // Notify admin dashboard in real-time
         emitToAdmins('adminUpdate', {
@@ -216,6 +221,8 @@ export const adminReleaseProjectPayment = async (req, res) => {
         if (freelancerSocket) {
             io.to(freelancerSocket).emit('newNotification', freelancerNotif)
             io.to(freelancerSocket).emit('paymentReleased', { amount, projectTitle: project.title })
+        } else {
+            pushPaymentReleased(project.freelancerId, amount, project.title)
         }
 
         // ── Notify client (real-time) ─────────────────────────────────────────
