@@ -26,15 +26,103 @@ export const updateProfile = async (req, res) => {
 
 export const searchFreelancers = async (req, res) => {
     try {
-        const { query, skill, minRating, maxPrice } = req.query
+        const { query, skill, minRating, maxPrice, country } = req.query
+
+        // Base candidates (role + not banned). Keep this strict so ranking is fast.
         let filter = { role: 'freelancer', isBanned: false }
 
-        if (query) filter.username = { $regex: query, $options: 'i' }
-        if (skill) filter.skills = { $in: [skill] }
-        if (minRating) filter.rating = { $gte: parseFloat(minRating) }
+        // Optional filters
+        if (country && String(country).trim()) {
+            filter.country = { $regex: String(country).trim(), $options: 'i' }
+        }
+        if (minRating) {
+            const mr = parseFloat(String(minRating))
+            if (!Number.isNaN(mr)) filter.rating = { $gte: mr }
+        }
 
-        const freelancers = await User.find(filter).select("-password").limit(20)
-        res.status(200).json(freelancers)
+        // Skill chip (UI sends "All" or a real skill)
+        const skillValue = skill && String(skill).trim() && String(skill).trim().toLowerCase() !== 'all'
+            ? String(skill).trim()
+            : null
+        if (skillValue) filter.skills = { $in: [skillValue] }
+
+        const rawQuery = query && String(query).trim() ? String(query).trim() : ''
+        const qLower = rawQuery.toLowerCase()
+
+        // Keyword narrowing: search username/bio/skills for "SEO-like" matching.
+        if (rawQuery) {
+            filter = {
+                ...filter,
+                $or: [
+                    { username: { $regex: rawQuery, $options: 'i' } },
+                    { bio: { $regex: rawQuery, $options: 'i' } },
+                    { skills: { $regex: rawQuery, $options: 'i' } },
+                ],
+            }
+        }
+
+        // Pull candidates, then rank in JS by match score.
+        // (No price field exists in User schema right now, so maxPrice is accepted but not used.)
+        const candidates = await User.find(filter)
+            .select('username bio skills country rating totalProjects profilePic successRate')
+            .limit(60)
+
+        const tokens = rawQuery
+            ? rawQuery
+                .toLowerCase()
+                .split(/[\s,]+/)
+                .map(t => t.trim())
+                .filter(Boolean)
+            : []
+
+        const countryLower = country && String(country).trim() ? String(country).trim().toLowerCase() : ''
+
+        const scored = candidates.map((u) => {
+            const freelancer = u.toObject()
+
+            const usernameLower = (freelancer.username || '').toLowerCase()
+            const bioLower = (freelancer.bio || '').toLowerCase()
+            const skillsLower = Array.isArray(freelancer.skills) ? freelancer.skills.map((s) => String(s).toLowerCase()) : []
+            const fCountryLower = (freelancer.country || '').toLowerCase()
+
+            let score = 0
+
+            // Direct skill chip match
+            if (skillValue && skillsLower.includes(skillValue.toLowerCase())) score += 6
+
+            if (qLower) {
+                // Full query match boosts
+                if (usernameLower.includes(qLower)) score += 3
+                if (bioLower.includes(qLower)) score += 3
+                if (skillsLower.some(s => s.includes(qLower))) score += 3
+
+                // Token-level matching for better SEO-like behavior
+                for (const t of tokens) {
+                    if (usernameLower.includes(t)) score += 1.5
+                    if (bioLower.includes(t)) score += 1.5
+                    if (skillsLower.some(s => s === t || s.includes(t))) score += 2.5
+                }
+            }
+
+            // Quality signals
+            score += (freelancer.rating ?? 0) * 0.8
+            score += (freelancer.totalProjects ?? 0) * 0.03
+            score += (freelancer.successRate ?? 0) * 0.2
+
+            // Country preference
+            if (countryLower && fCountryLower.includes(countryLower)) score += 2
+
+            return { ...freelancer, matchScore: score }
+        })
+
+        scored.sort((a, b) => {
+            // Highest score first; tie-break by rating
+            if (b.matchScore !== a.matchScore) return (b.matchScore ?? 0) - (a.matchScore ?? 0)
+            return (b.rating ?? 0) - (a.rating ?? 0)
+        })
+
+        // Return top results for UI
+        res.status(200).json(scored.slice(0, 20))
     } catch (error) {
         res.status(500).json({ error: "Search failed" })
     }

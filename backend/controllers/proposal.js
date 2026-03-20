@@ -46,6 +46,7 @@ export const submitProposal = async (req, res) => {
 
 export const getMyProposals = async (req, res) => {
     try {
+        console.log('[getMyProposals] logged-in userId:', req.user?._id)
         const proposals = await Proposal.find({ freelancerId: req.user._id })
             .populate('projectId', 'title budget status category clientId')
             .sort({ createdAt: -1 })
