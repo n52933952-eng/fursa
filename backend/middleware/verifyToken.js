@@ -14,8 +14,19 @@ export const verifyToken = async (req, res, next) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
         const userId = decoded.id
         const user = await User.findById(userId).select("-password")
-        console.log('[verifyToken] decoded userId:', userId, 'userFound:', !!user)
         if (!user) {
+            let dbHint = ''
+            try {
+                const uri = process.env.MONGO_URI || ''
+                const noQuery = uri.split('?')[0] || ''
+                const seg = noQuery.split('/').filter(Boolean)
+                const name = seg.length ? seg[seg.length - 1] : ''
+                if (name && !name.includes('@')) dbHint = ` DB name from MONGO_URI: "${name}".`
+            } catch { /* ignore */ }
+            console.warn(
+                `[verifyToken] JWT user id ${userId} not in MongoDB.${dbHint} ` +
+                'Fix: use same MONGO_URI as where users are created, or sign in again after clearing the app session.'
+            )
             return res.status(401).json({ error: `User not found (${userId})` })
         }
         if (user.isBanned) return res.status(403).json({ error: "Account banned" })
