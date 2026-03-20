@@ -21,7 +21,7 @@ export const signup = async (req, res) => {
         await new Wallet({ userId: newUser._id }).save()
 
         // Generate token for mobile auto-login after register
-        const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '15d' })
+        const token = jwt.sign({ id: String(newUser._id) }, process.env.JWT_SECRET, { expiresIn: '15d' })
         const { password: pass, ...rest } = newUser._doc
 
         // Notify admin dashboard in real-time
@@ -44,7 +44,7 @@ export const login = async (req, res) => {
         const isCorrect = bcryptjs.compareSync(password, user.password)
         if (!isCorrect) return res.status(400).json({ error: "Invalid email or password" })
 
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '15d' })
+        const token = jwt.sign({ id: String(user._id) }, process.env.JWT_SECRET, { expiresIn: '15d' })
         const { password: pass, ...rest } = user._doc
 
         // Set cookie for web dashboard + include token in body for mobile app
@@ -128,7 +128,9 @@ export const resetPassword = async (req, res) => {
 // ─── Google Sign-In ───────────────────────────────────────────────────────────
 // Mobile sends: { email, name, googleId, profilePic, role }
 // We trust the mobile (it already verified with Firebase client-side).
-// Role is required for NEW users only.
+//
+// Returning user: same Google account again → findOne matches googleId or email → 200 + JWT (no role).
+// Brand-new user: no document → 400 { error: "role_required" } until app sends role once.
 export const googleSignIn = async (req, res) => {
     try {
         const { email, name, googleId, profilePic, role } = req.body
@@ -137,8 +139,10 @@ export const googleSignIn = async (req, res) => {
             return res.status(400).json({ error: "Email and Google ID are required" })
         }
 
-        // 1. Find existing user by googleId or email
-        let user = await User.findOne({ $or: [{ googleId }, { email: email.toLowerCase() }] })
+        const emailNorm = String(email).trim().toLowerCase()
+
+        // 1. Find existing user by googleId or email (covers “registered before, logging in again”)
+        let user = await User.findOne({ $or: [{ googleId }, { email: emailNorm }] })
 
         if (user) {
             // ── Existing user: just log in ──
@@ -157,7 +161,7 @@ export const googleSignIn = async (req, res) => {
             }
 
             // Generate unique username from email
-            let baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')
+            let baseUsername = emailNorm.split('@')[0].replace(/[^a-z0-9_]/g, '')
             let username = baseUsername
             let counter  = 1
             while (await User.findOne({ username })) {
@@ -166,7 +170,7 @@ export const googleSignIn = async (req, res) => {
 
             user = new User({
                 username,
-                email:        email.toLowerCase(),
+                email:        emailNorm,
                 password:     bcryptjs.hashSync(Math.random().toString(36), 10), // unused placeholder
                 role:         role,
                 profilePic:   profilePic || '',
@@ -183,8 +187,8 @@ export const googleSignIn = async (req, res) => {
             console.log('✅ New Google user created:', username, role)
         }
 
-        // 2. Generate JWT (same as regular login)
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '15d' })
+        // 2. Generate JWT (same as regular login) — id must be a string for reliable verifyToken + findById
+        const token = jwt.sign({ id: String(user._id) }, process.env.JWT_SECRET, { expiresIn: '15d' })
         const { password: _pw, ...rest } = user._doc
 
         res.status(200).json({ ...rest, token })

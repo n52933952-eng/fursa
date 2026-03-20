@@ -12,7 +12,8 @@ export const verifyToken = async (req, res, next) => {
         if (!token) return res.status(401).json({ error: "Unauthorized - no token" })
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
-        const userId = decoded.id
+        const userId = decoded.id != null ? String(decoded.id) : null
+        if (!userId) return res.status(401).json({ error: "Invalid token payload" })
         const user = await User.findById(userId).select("-password")
         if (!user) {
             let dbHint = ''
