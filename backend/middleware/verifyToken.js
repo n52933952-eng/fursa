@@ -12,8 +12,12 @@ export const verifyToken = async (req, res, next) => {
         if (!token) return res.status(401).json({ error: "Unauthorized - no token" })
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
-        const user = await User.findById(decoded.id).select("-password")
-        if (!user) return res.status(401).json({ error: "User not found" })
+        const userId = decoded.id
+        const user = await User.findById(userId).select("-password")
+        console.log('[verifyToken] decoded userId:', userId, 'userFound:', !!user)
+        if (!user) {
+            return res.status(401).json({ error: `User not found (${userId})` })
+        }
         if (user.isBanned) return res.status(403).json({ error: "Account banned" })
 
         req.user = user
