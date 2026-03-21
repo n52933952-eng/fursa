@@ -22,6 +22,89 @@ const __dirname  = dirname(__filename)
 
 let isInitialized = false
 
+/**
+ * Render / .env mistakes that break JSON.parse:
+ * - Pasting the whole line `FIREBASE_SERVICE_ACCOUNT={...}` as the value
+ * - Two JSON objects concatenated
+ * - UTF-8 BOM at start
+ * - Outer single quotes
+ * Extract first `{ ... }` balance and normalize private_key newlines.
+ */
+function stripBom(s) {
+    return s.replace(/^\uFEFF/, '')
+}
+
+function extractFirstJsonObject(s) {
+    const start = s.indexOf('{')
+    if (start < 0) return null
+    let depth = 0
+    for (let i = start; i < s.length; i++) {
+        const c = s[i]
+        if (c === '{') depth++
+        else if (c === '}') {
+            depth--
+            if (depth === 0) return s.slice(start, i + 1)
+        }
+    }
+    return null
+}
+
+function normalizePrivateKeyInRawJson(raw) {
+    const match = raw.match(/"private_key"\s*:\s*"([\s\S]*?)"\s*,/)
+    if (!match) return raw
+    const fixed = match[1].replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\n')
+    return raw.replace(/"private_key"\s*:\s*"[\s\S]*?"\s*,/, `"private_key":"${fixed}",`)
+}
+
+function parseServiceAccountFromEnv(rawInput) {
+    if (!rawInput || typeof rawInput !== 'string') return null
+
+    let raw = stripBom(rawInput).trim()
+
+    // Outer quotes from some hosts ( ' {...} ' )
+    if ((raw.startsWith("'") && raw.endsWith("'")) || (raw.startsWith('"') && raw.endsWith('"') && raw.length > 2)) {
+        raw = raw.slice(1, -1).trim()
+    }
+
+    // Accidentally pasted "KEY=value" style into the value field
+    const eqIdx = raw.indexOf('={')
+    if (eqIdx !== -1 && /^[A-Z0-9_]+$/i.test(raw.slice(0, eqIdx).trim())) {
+        raw = raw.slice(eqIdx + 1).trim()
+    }
+
+    // Missing outer { } — e.g. pasted from file starting at "type": not {
+    if (!raw.startsWith('{') && /"type"\s*:\s*"service_account"/i.test(raw)) {
+        raw = raw.replace(/\s+$/, '')
+        if (!raw.endsWith('}')) raw += '}'
+        raw = `{${raw}`
+    }
+
+    function parseJsonWithKeyFix(str) {
+        try {
+            return JSON.parse(str)
+        } catch {
+            const fixedKey = normalizePrivateKeyInRawJson(str)
+            if (fixedKey === str) throw new Error('bad json')
+            return JSON.parse(fixedKey)
+        }
+    }
+
+    try {
+        return parseJsonWithKeyFix(raw)
+    } catch {
+        const extracted = extractFirstJsonObject(raw)
+        if (extracted) {
+            try {
+                return parseJsonWithKeyFix(extracted)
+            } catch {
+                /* fall through */
+            }
+        }
+    }
+
+    return null
+}
+
 // ─── Initialize Firebase Admin ────────────────────────────────────────────────
 
 export function initializeFCM() {
@@ -30,17 +113,12 @@ export function initializeFCM() {
 
         // Try env variable first (for Render deployment)
         if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-            let raw = process.env.FIREBASE_SERVICE_ACCOUNT.trim()
-            try {
-                serviceAccount = JSON.parse(raw)
-            } catch {
-                // Try fixing newlines in private_key
-                const match = raw.match(/"private_key"\s*:\s*"([\s\S]*?)"\s*,/)
-                if (match) {
-                    const fixed = match[1].replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\n')
-                    raw = raw.replace(/"private_key"\s*:\s*"[\s\S]*?"\s*,/, `"private_key":"${fixed}",`)
-                    serviceAccount = JSON.parse(raw)
-                }
+            serviceAccount = parseServiceAccountFromEnv(process.env.FIREBASE_SERVICE_ACCOUNT)
+            if (!serviceAccount) {
+                console.error(
+                    '❌ [FCM] FIREBASE_SERVICE_ACCOUNT is not valid JSON. On Render: paste ONLY the {...} object as the value (no variable name, no extra text after the closing }).',
+                )
+                return
             }
         } else {
             // Fall back to local file
