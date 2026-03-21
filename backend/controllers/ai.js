@@ -1,14 +1,53 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import Project from '../models/Project.js'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+// ── Gemini client (lazy) + common env mistakes ────────────────────────────────
+/** Copy/paste typo: lowercase L instead of I at start of Google API keys */
+function normalizeGeminiApiKey(raw) {
+    if (raw == null || typeof raw !== 'string') return ''
+    const t = raw.trim()
+    if (t.startsWith('AlzaSy')) return `AIzaSy${t.slice(6)}`
+    return t
+}
 
-// Use the current stable model — "gemini-pro" was deprecated
-const MODEL = 'gemini-1.5-flash'
+/** Default model; override with GEMINI_MODEL if Google returns 404 (e.g. gemini-2.0-flash) */
+function resolvedGeminiModel() {
+    return (process.env.GEMINI_MODEL || 'gemini-1.5-flash').trim()
+}
 
-// Helper: safely get model
+let _geminiClient = null
+function getGeminiClient() {
+    const key = normalizeGeminiApiKey(process.env.GEMINI_API_KEY)
+    if (!key) return null
+    if (!_geminiClient) _geminiClient = new GoogleGenerativeAI(key)
+    return _geminiClient
+}
+
+function friendlyGeminiError(err) {
+    const msg = String(err?.message || err || '')
+    if (/MISSING_GEMINI_KEY|missing.*gemini/i.test(msg)) {
+        return 'AI is not configured: set GEMINI_API_KEY on the server (Google AI Studio, starts with AIza).'
+    }
+    if (/API key not valid|API_KEY_INVALID|invalid api key|401|403/i.test(msg)) {
+        return 'Gemini API key is invalid. Copy it again from Google AI Studio — it must start with AIza (not Alza).'
+    }
+    if (/404|not found|is not found for api version/i.test(msg)) {
+        return `Gemini model not available. Set env GEMINI_MODEL to a model your key can use (e.g. gemini-2.0-flash). Current: ${resolvedGeminiModel()}`
+    }
+    if (/429|quota|resource exhausted|rate limit/i.test(msg)) {
+        return 'Gemini quota exceeded or rate limited. Try again later or check Google AI Studio limits.'
+    }
+    return 'AI request failed. Please try again.'
+}
+
 function getModel() {
-    return genAI.getGenerativeModel({ model: MODEL })
+    const client = getGeminiClient()
+    if (!client) {
+        const e = new Error('MISSING_GEMINI_KEY')
+        e.code = 'MISSING_GEMINI_KEY'
+        throw e
+    }
+    return client.getGenerativeModel({ model: resolvedGeminiModel() })
 }
 
 // Helper: safely parse JSON from AI text (handles markdown code fences)
@@ -93,7 +132,8 @@ AR: [اكتب 3-4 جمل واضحة واحترافية باللغة العربي
         res.status(200).json({ description: text })
     } catch (error) {
         console.error('[AI generateDescription]', error?.message || error)
-        res.status(500).json({ error: "AI writing assistant failed. Please try again." })
+        const status = error?.code === 'MISSING_GEMINI_KEY' ? 503 : 502
+        res.status(status).json({ error: friendlyGeminiError(error) })
     }
 }
 
@@ -152,7 +192,8 @@ Suggest a realistic price range in USD. Return ONLY valid JSON (no markdown, no 
         res.status(200).json(pricing)
     } catch (error) {
         console.error('[AI suggestPrice]', error?.message || error)
-        res.status(500).json({ error: "Price suggestion failed. Please try again." })
+        const status = error?.code === 'MISSING_GEMINI_KEY' ? 503 : 502
+        res.status(status).json({ error: friendlyGeminiError(error) })
     }
 }
 
@@ -183,7 +224,8 @@ Return ONLY a JSON array of skill strings (max 10 skills, no markdown):
         res.status(200).json({ skills: Array.isArray(skills) ? skills : [] })
     } catch (error) {
         console.error('[AI extractSkills]', error?.message || error)
-        res.status(500).json({ error: "Skill extraction failed. Please try again." })
+        const status = error?.code === 'MISSING_GEMINI_KEY' ? 503 : 502
+        res.status(status).json({ error: friendlyGeminiError(error) })
     }
 }
 
@@ -241,10 +283,10 @@ async function openaiChatCompletion(messages) {
 }
 
 async function geminiChatCompletion(messages) {
-    const key = process.env.GEMINI_API_KEY
-    if (!key) throw new Error('No AI provider configured')
-    const model = genAI.getGenerativeModel({
-        model: MODEL,
+    const client = getGeminiClient()
+    if (!client) throw new Error('No AI provider configured')
+    const model = client.getGenerativeModel({
+        model: resolvedGeminiModel(),
         systemInstruction: CHAT_SYSTEM,
     })
     const last = messages[messages.length - 1]
@@ -277,13 +319,13 @@ export const chatAssistant = async (req, res) => {
                 reply = await openaiChatCompletion(messages)
             } catch (e) {
                 console.error('[AI chat OpenAI]', e?.message || e)
-                if (process.env.GEMINI_API_KEY) {
+                if (normalizeGeminiApiKey(process.env.GEMINI_API_KEY)) {
                     reply = await geminiChatCompletion(messages)
                 } else {
                     return res.status(502).json({ error: e?.message || 'AI chat failed' })
                 }
             }
-        } else if (process.env.GEMINI_API_KEY) {
+        } else if (normalizeGeminiApiKey(process.env.GEMINI_API_KEY)) {
             reply = await geminiChatCompletion(messages)
         } else {
             return res.status(503).json({
