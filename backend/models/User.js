@@ -8,6 +8,8 @@ const UserSchema = new mongoose.Schema({
     profilePic: { type: String, default: '' },
     bio: { type: String, default: '' },
     skills: [{ type: String }],
+    /** Categories this user cares about (client: typical posts; freelancer: which open projects to see). */
+    interestedCategories: [{ type: String }],
     portfolio: [{ type: String }],
     country: { type: String, default: '' },
     language: { type: String, enum: ['ar', 'en'], default: 'ar' },

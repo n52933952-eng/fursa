@@ -1,4 +1,5 @@
 import User from '../models/User.js'
+import { sanitizeInterestedCategories } from '../config/projectCategories.js'
 import Wallet from '../models/Wallet.js'
 import bcryptjs from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -8,13 +9,23 @@ import { emitToAdmins } from '../socket/socket.js'
 
 export const signup = async (req, res) => {
     try {
-        const { username, email, password, role } = req.body
+        const { username, email, password, role, interestedCategories } = req.body
+        const cats = sanitizeInterestedCategories(interestedCategories)
+        if (cats.length === 0) {
+            return res.status(400).json({ error: 'Select at least one project category (Design, Development, etc.)' })
+        }
 
         const existingUser = await User.findOne({ $or: [{ email }, { username }] })
         if (existingUser) return res.status(400).json({ error: "Username or email already exists" })
 
         const hashedPassword = bcryptjs.hashSync(password, 10)
-        const newUser = new User({ username, email, password: hashedPassword, role: role || 'client' })
+        const newUser = new User({
+            username,
+            email,
+            password: hashedPassword,
+            role: role || 'client',
+            interestedCategories: cats,
+        })
         await newUser.save()
 
         // Create wallet for every new user
@@ -133,7 +144,7 @@ export const resetPassword = async (req, res) => {
 // Brand-new user: no document → 400 { error: "role_required" } until app sends role once.
 export const googleSignIn = async (req, res) => {
     try {
-        const { email, name, googleId, profilePic, role } = req.body
+        const { email, name, googleId, profilePic, role, interestedCategories } = req.body
 
         if (!email || !googleId) {
             return res.status(400).json({ error: "Email and Google ID are required" })
@@ -159,6 +170,10 @@ export const googleSignIn = async (req, res) => {
             if (!role || !['client', 'freelancer'].includes(role)) {
                 return res.status(400).json({ error: "role_required" })
             }
+            const cats = sanitizeInterestedCategories(interestedCategories)
+            if (cats.length === 0) {
+                return res.status(400).json({ error: 'categories_required' })
+            }
 
             // Generate unique username from email
             let baseUsername = emailNorm.split('@')[0].replace(/[^a-z0-9_]/g, '')
@@ -176,6 +191,7 @@ export const googleSignIn = async (req, res) => {
                 profilePic:   profilePic || '',
                 googleId,
                 authProvider: 'google',
+                interestedCategories: cats,
             })
             await user.save()
 

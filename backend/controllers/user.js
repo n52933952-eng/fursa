@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import User from '../models/User.js'
+import { sanitizeInterestedCategories } from '../config/projectCategories.js'
 
 const MAX_SAVED_CARDS = 5
 const BRANDS = new Set(['visa', 'mastercard', 'mada', 'amex', 'other'])
@@ -16,10 +17,14 @@ export const getProfile = async (req, res) => {
 
 export const updateProfile = async (req, res) => {
     try {
-        const { bio, skills, country, language, profilePic, portfolio } = req.body
+        const { bio, skills, country, language, profilePic, portfolio, interestedCategories } = req.body
+        const patch = { bio, skills, country, language, profilePic, portfolio }
+        if (interestedCategories !== undefined) {
+            patch.interestedCategories = sanitizeInterestedCategories(interestedCategories)
+        }
         const updated = await User.findByIdAndUpdate(
             req.user._id,
-            { bio, skills, country, language, profilePic, portfolio },
+            patch,
             { new: true }
         ).select("-password")
         res.status(200).json(updated)

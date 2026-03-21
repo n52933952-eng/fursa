@@ -1,4 +1,8 @@
 import Project from '../models/Project.js'
+
+function escapeRegex(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 import Milestone from '../models/Milestone.js'
 import Contract from '../models/Contract.js'
 import Wallet from '../models/Wallet.js'
@@ -41,16 +45,53 @@ export const createProject = async (req, res) => {
 export const getProjects = async (req, res) => {
     try {
         const { category, minBudget, maxBudget, skill, search } = req.query
-        let filter = { status: 'open' }
+        const conditions = [{ status: 'open' }]
 
-        if (category) filter.category = category
-        if (skill) filter.skills = { $in: [skill] }
-        if (search) filter.title = { $regex: search, $options: 'i' }
-        if (minBudget || maxBudget) {
-            filter.budget = {}
-            if (minBudget) filter.budget.$gte = parseFloat(minBudget)
-            if (maxBudget) filter.budget.$lte = parseFloat(maxBudget)
+        if (category) {
+            conditions.push({ category: String(category) })
+        } else {
+            const me = req.user
+            const cats = me?.interestedCategories
+            if (
+                me?.role === 'freelancer'
+                && Array.isArray(cats)
+                && cats.length > 0
+            ) {
+                conditions.push({ category: { $in: cats } })
+            }
         }
+
+        if (skill) {
+            conditions.push({ skills: String(skill) })
+        }
+
+        const q = search != null ? String(search).trim() : ''
+        if (q) {
+            const safe = escapeRegex(q)
+            conditions.push({
+                $or: [
+                    { title: { $regex: safe, $options: 'i' } },
+                    { description: { $regex: safe, $options: 'i' } },
+                    { category: { $regex: safe, $options: 'i' } },
+                    { skills: { $regex: safe, $options: 'i' } },
+                ],
+            })
+        }
+
+        if (minBudget || maxBudget) {
+            const budget = {}
+            if (minBudget) {
+                const n = parseFloat(minBudget)
+                if (!Number.isNaN(n)) budget.$gte = n
+            }
+            if (maxBudget) {
+                const n = parseFloat(maxBudget)
+                if (!Number.isNaN(n)) budget.$lte = n
+            }
+            if (Object.keys(budget).length) conditions.push({ budget })
+        }
+
+        const filter = conditions.length === 1 ? conditions[0] : { $and: conditions }
 
         const projects = await Project.find(filter)
             .populate('clientId', 'username profilePic rating')
