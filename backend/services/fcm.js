@@ -60,6 +60,8 @@ function parseServiceAccountFromEnv(rawInput) {
     if (!rawInput || typeof rawInput !== 'string') return null
 
     let raw = stripBom(rawInput).trim()
+    // Smart quotes / BOM-like chars from copy-paste
+    raw = raw.replace(/[\u201c\u201d\u2018\u2019]/g, '"')
 
     // Outer quotes from some hosts ( ' {...} ' )
     if ((raw.startsWith("'") && raw.endsWith("'")) || (raw.startsWith('"') && raw.endsWith('"') && raw.length > 2)) {
@@ -111,12 +113,26 @@ export function initializeFCM() {
     try {
         let serviceAccount
 
-        // Try env variable first (for Render deployment)
-        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        // 1) Base64 (best for Render — avoids quote/newline truncation in the dashboard)
+        const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64?.trim()
+        if (b64) {
+            try {
+                const decoded = Buffer.from(b64, 'base64').toString('utf8')
+                serviceAccount = parseServiceAccountFromEnv(decoded) || JSON.parse(decoded)
+            } catch (e) {
+                console.error('❌ [FCM] FIREBASE_SERVICE_ACCOUNT_BASE64 decode/parse failed:', e.message)
+                return
+            }
+            if (!serviceAccount?.private_key || !serviceAccount?.client_email) {
+                console.error('❌ [FCM] FIREBASE_SERVICE_ACCOUNT_BASE64 decoded but missing private_key / client_email')
+                return
+            }
+        } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+            // 2) Raw JSON string (single-line JSON is safest on Render)
             serviceAccount = parseServiceAccountFromEnv(process.env.FIREBASE_SERVICE_ACCOUNT)
             if (!serviceAccount) {
                 console.error(
-                    '❌ [FCM] FIREBASE_SERVICE_ACCOUNT is not valid JSON. On Render: paste ONLY the {...} object as the value (no variable name, no extra text after the closing }).',
+                    '❌ [FCM] FIREBASE_SERVICE_ACCOUNT is not valid JSON. Fix: (A) paste one-line JSON {...} only, or (B) set FIREBASE_SERVICE_ACCOUNT_BASE64 (base64 of the file). See backend/env.example.txt',
                 )
                 return
             }

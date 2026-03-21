@@ -9,7 +9,9 @@ import { server, app } from './socket/socket.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+// Load .env from backend/ and repo root (covers `node backend/index.js` vs cwd differences)
 dotenv.config({ path: path.join(__dirname, '.env') })
+dotenv.config({ path: path.join(__dirname, '..', '.env') })
 
 import authRoute from './routes/auth.js'
 import userRoute from './routes/user.js'
