@@ -199,9 +199,10 @@ export const markProjectComplete = async (req, res) => {
         const clientSocket = getRecipientSocketId(project.clientId.toString())
         if (clientSocket) {
             io.to(clientSocket).emit('newNotification', clientNotif)
-        } else {
-            pushProjectComplete(project.clientId, req.user.username, project.title, project._id)
         }
+        pushProjectComplete(project.clientId, req.user.username, project.title, project._id).catch((e) =>
+            console.error('[FCM] pushProjectComplete', e?.message || e),
+        )
 
         // Notify admin dashboard in real-time
         emitToAdmins('adminUpdate', {
@@ -274,9 +275,10 @@ export const adminReleaseProjectPayment = async (req, res) => {
         if (freelancerSocket) {
             io.to(freelancerSocket).emit('newNotification', freelancerNotif)
             io.to(freelancerSocket).emit('paymentReleased', { amount, projectTitle: project.title })
-        } else {
-            pushPaymentReleased(project.freelancerId, amount, project.title)
         }
+        pushPaymentReleased(project.freelancerId, amount, project.title).catch((e) =>
+            console.error('[FCM] pushPaymentReleased', e?.message || e),
+        )
 
         // ── Notify client (real-time) ─────────────────────────────────────────
         const clientNotif = new Notification({

@@ -48,9 +48,11 @@ export const submitProposal = async (req, res) => {
                 freelancerUsername: req.user.username,
                 proposalId: String(proposal._id),
             })
-        } else {
-            pushNewProposal(project.clientId, req.user.username, project.title, projectId)
         }
+        // Always send push — user may be backgrounded but still have a socket; FCM reaches the device.
+        pushNewProposal(project.clientId, req.user.username, project.title, projectId).catch((e) =>
+            console.error('[FCM] pushNewProposal', e?.message || e),
+        )
 
         emitToClientRoom(clientIdStr, 'clientProjectsChanged', {
             reason: 'newProposal',
@@ -171,10 +173,10 @@ export const acceptProposal = async (req, res) => {
                 projectTitle: project.title,
                 bid:          proposal.bid,
             })
-        } else {
-            // Freelancer is offline — push notification
-            pushProposalAccepted(proposal.freelancerId, project.title, proposal.projectId)
         }
+        pushProposalAccepted(proposal.freelancerId, project.title, proposal.projectId).catch((e) =>
+            console.error('[FCM] pushProposalAccepted', e?.message || e),
+        )
 
         // Notify CLIENT — money was deducted from their wallet into escrow
         const clientNotif = new Notification({

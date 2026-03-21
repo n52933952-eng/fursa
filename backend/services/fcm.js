@@ -74,30 +74,56 @@ export function initializeFCM() {
 
 // ─── Core send helper ─────────────────────────────────────────────────────────
 
+function toMongoUserId(userId) {
+    if (userId == null) return null
+    if (typeof userId === 'object' && userId._id != null) return String(userId._id)
+    return String(userId)
+}
+
 async function sendToUser(userId, { title, body, data = {} }) {
     if (!isInitialized) return { success: false, error: 'FCM not initialized' }
+    const uid = toMongoUserId(userId)
+    if (!uid) return { success: false, error: 'Invalid user id' }
+
     try {
-        const user = await User.findById(userId).select('fcmToken')
+        const user = await User.findById(uid).select('fcmToken')
         if (!user?.fcmToken) return { success: false, error: 'No FCM token' }
 
-        // Send as data-only message so notifee handles display in ALL states
-        // (foreground, background, killed) — gives WhatsApp-style heads-up popup
+        const titleStr = String(title || 'Fursa').slice(0, 200)
+        const bodyStr = String(body || '').slice(0, 500)
+        const dataPayload = {
+            title: titleStr,
+            body: bodyStr,
+            ...Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? '')])),
+        }
+
+        // notification: system tray on Android/iOS when app is background / killed
+        // data: deep-link fields for the client (must be strings)
         const message = {
             token: user.fcmToken,
-            data: {
-                title,
-                body,
-                ...Object.fromEntries(
-                    Object.entries(data).map(([k, v]) => [k, String(v)])
-                ),
+            notification: {
+                title: titleStr,
+                body: bodyStr,
             },
+            data: dataPayload,
             android: {
-                priority: 'high',       // wakes up the device
-                ttl: 60 * 60 * 1000,   // 1 hour — deliver even if device is sleeping
+                priority: 'high',
+                ttl: 60 * 60 * 1000,
+                notification: {
+                    channelId: 'fursa_default',
+                    sound: 'default',
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
+                },
             },
             apns: {
-                headers: { 'apns-priority': '10', 'apns-push-type': 'background' },
-                payload: { aps: { 'content-available': 1, sound: 'default' } },
+                headers: { 'apns-priority': '10' },
+                payload: {
+                    aps: {
+                        alert: { title: titleStr, body: bodyStr },
+                        sound: 'default',
+                    },
+                },
             },
         }
 
@@ -105,10 +131,9 @@ async function sendToUser(userId, { title, body, data = {} }) {
         return { success: true, messageId: response }
 
     } catch (err) {
-        // Token expired / unregistered — clear it
         if (err.code === 'messaging/registration-token-not-registered' ||
             err.code === 'messaging/invalid-registration-token') {
-            await User.findByIdAndUpdate(userId, { fcmToken: null })
+            await User.findByIdAndUpdate(uid, { fcmToken: null })
         }
         console.error('❌ [FCM] sendToUser:', err.message)
         return { success: false, error: err.message }

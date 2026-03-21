@@ -30,15 +30,14 @@ export const sendMessage = async (req, res) => {
         const recipientSocketId = getRecipientSocketId(recipientId)
         if (recipientSocketId) {
             io.to(recipientSocketId).emit("newMessage", message)
-        } else {
-            // Recipient is offline — send push notification
-            pushNewMessage(
-                recipientId,
-                req.user.username,
-                text || '📎 Attachment',
-                conversation._id
-            )
         }
+        // Always FCM too — app closed/background often still has a socket briefly; user expects a tray notification.
+        pushNewMessage(
+            recipientId,
+            req.user.username,
+            text || '📎 Attachment',
+            conversation._id,
+        ).catch((e) => console.error('[FCM] pushNewMessage', e?.message || e))
 
         res.status(201).json(message)
     } catch (error) {
