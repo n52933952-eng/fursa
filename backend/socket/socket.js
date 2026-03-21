@@ -42,7 +42,8 @@ io.on("connection", socket => {
 
     const userIdRaw = socket.handshake.query.userId
     const role      = socket.handshake.query.role
-    const userId    = userIdRaw && userId !== "undefined" ? String(userIdRaw) : null
+    const userIdStr = userIdRaw != null ? String(userIdRaw) : ''
+    const userId    = userIdStr && userIdStr !== 'undefined' ? userIdStr : null
 
     if (userId) {
         userSocketMap[userId] = {
