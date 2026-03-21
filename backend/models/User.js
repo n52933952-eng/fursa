@@ -25,6 +25,17 @@ const UserSchema = new mongoose.Schema({
     authProvider: { type: String, enum: ['local', 'google'], default: 'local' },
     // Push notifications (FCM)
     fcmToken:     { type: String, default: null },
+    /**
+     * Display / payout reference only — never store full PAN or CVV (PCI).
+     * Real charges should use Tap/PayTabs tokenization on the client.
+     */
+    savedCards: [{
+        nickname:   { type: String, default: '' },
+        holderName: { type: String, required: true, trim: true },
+        brand:      { type: String, enum: ['visa', 'mastercard', 'mada', 'amex', 'other'], default: 'other' },
+        last4:      { type: String, required: true },
+        expiry:     { type: String, default: '' },
+    }],
 }, { timestamps: true })
 
 const User = mongoose.model("User", UserSchema)

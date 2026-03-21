@@ -94,7 +94,7 @@ export const getMyProposals = async (req, res) => {
 export const getProposalsByProject = async (req, res) => {
     try {
         const proposals = await Proposal.find({ projectId: req.params.projectId })
-            .populate('freelancerId', 'username profilePic rating skills totalProjects')
+            .populate('freelancerId', 'username profilePic rating skills totalProjects totalReviews')
             .sort({ createdAt: -1 })
         res.status(200).json(proposals)
     } catch (error) {

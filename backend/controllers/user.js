@@ -1,8 +1,12 @@
+import mongoose from 'mongoose'
 import User from '../models/User.js'
+
+const MAX_SAVED_CARDS = 5
+const BRANDS = new Set(['visa', 'mastercard', 'mada', 'amex', 'other'])
 
 export const getProfile = async (req, res) => {
     try {
-        const user = await User.findById(req.params.id).select("-password")
+        const user = await User.findById(req.params.id).select("-password -savedCards")
         if (!user) return res.status(404).json({ error: "User not found" })
         res.status(200).json(user)
     } catch (error) {
@@ -64,7 +68,7 @@ export const searchFreelancers = async (req, res) => {
         // Pull candidates, then rank in JS by match score.
         // (No price field exists in User schema right now, so maxPrice is accepted but not used.)
         const candidates = await User.find(filter)
-            .select('username bio skills country rating totalProjects profilePic successRate')
+            .select('username bio skills country rating totalProjects totalReviews profilePic successRate')
             .limit(60)
 
         const tokens = rawQuery
@@ -140,6 +144,73 @@ export const saveFcmToken = async (req, res) => {
 }
 
 // Search all users by username (for starting new chat conversations)
+/** Saved card labels for wallet / payouts (metadata only — no full card number). */
+export const getPaymentMethods = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id).select('savedCards')
+        if (!user) return res.status(404).json({ error: 'User not found' })
+        res.status(200).json({ cards: user.savedCards || [] })
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to load payment methods' })
+    }
+}
+
+export const addPaymentMethod = async (req, res) => {
+    try {
+        const { holderName, brand, last4, expiry, nickname } = req.body
+        const name = holderName != null ? String(holderName).trim() : ''
+        if (!name) return res.status(400).json({ error: 'Cardholder name is required' })
+
+        const digits = String(last4 || '').replace(/\D/g, '')
+        if (digits.length !== 4) return res.status(400).json({ error: 'Last 4 digits are required' })
+
+        const b = brand && BRANDS.has(String(brand)) ? String(brand) : 'other'
+        const exp = expiry != null ? String(expiry).trim().slice(0, 5) : ''
+        const nick = nickname != null ? String(nickname).trim().slice(0, 40) : ''
+
+        const user = await User.findById(req.user._id)
+        if (!user) return res.status(404).json({ error: 'User not found' })
+
+        const list = user.savedCards || []
+        if (list.length >= MAX_SAVED_CARDS) {
+            return res.status(400).json({ error: `You can save up to ${MAX_SAVED_CARDS} cards` })
+        }
+
+        list.push({
+            holderName: name,
+            brand: b,
+            last4: digits,
+            expiry: exp,
+            nickname: nick,
+        })
+        user.savedCards = list
+        await user.save()
+
+        res.status(201).json({ cards: user.savedCards })
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to save card' })
+    }
+}
+
+export const removePaymentMethod = async (req, res) => {
+    try {
+        const { cardId } = req.params
+        if (!cardId || !mongoose.Types.ObjectId.isValid(cardId)) {
+            return res.status(400).json({ error: 'Invalid card id' })
+        }
+        const user = await User.findById(req.user._id)
+        if (!user) return res.status(404).json({ error: 'User not found' })
+
+        user.savedCards = (user.savedCards || []).filter(
+            (c) => String(c._id) !== String(cardId)
+        )
+        await user.save()
+        res.status(200).json({ cards: user.savedCards })
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to remove card' })
+    }
+}
+
 export const searchUsers = async (req, res) => {
     try {
         const { query } = req.query
