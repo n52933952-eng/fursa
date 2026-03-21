@@ -197,27 +197,51 @@ export function initializeFCM() {
     try {
         let serviceAccount
 
-        // 0) GOOGLE_APPLICATION_CREDENTIALS — same as thredtrain file path: readFileSync + JSON.parse + cert()
-        //    (Do NOT use applicationDefault() here; on some hosts the first token fetch still fails with Invalid JWT Signature.)
+        // 0) GOOGLE_APPLICATION_CREDENTIALS — Google’s usual meaning is a FILE PATH, but many hosts let you paste JSON here.
+        //    We support BOTH: value starts with "{" → inline JSON; else → read file from path (thredtrain-style).
         const gac = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()
-        if (gac && existsSync(gac)) {
-            try {
-                const fileContent = readFileSync(gac, 'utf8')
-                if (!fileContent?.trim()) {
-                    console.error(`❌ [FCM] GOOGLE_APPLICATION_CREDENTIALS file is empty: ${gac}`)
+        if (gac) {
+            if (gac.startsWith('{')) {
+                serviceAccount =
+                    parseServiceAccountFromEnvThredtrainStyle(gac) ?? parseServiceAccountFromEnv(gac)
+                if (!serviceAccount) {
+                    try {
+                        serviceAccount = JSON.parse(gac)
+                    } catch {
+                        /* fall through */
+                    }
+                }
+                if (!serviceAccount?.private_key || !serviceAccount?.client_email) {
+                    console.error(
+                        '❌ [FCM] GOOGLE_APPLICATION_CREDENTIALS looks like JSON but parse failed or missing private_key/client_email.',
+                    )
                     return
                 }
-                serviceAccount = JSON.parse(fileContent)
                 console.log(
-                    `🔍 [FCM] Loaded JSON from GOOGLE_APPLICATION_CREDENTIALS=${gac} (thredtrain-style readFile + cert) project_id:`,
-                    serviceAccount?.project_id,
+                    '🔍 [FCM] Loaded credentials from GOOGLE_APPLICATION_CREDENTIALS (inline JSON) project_id:',
+                    serviceAccount.project_id,
                 )
-            } catch (e) {
-                console.error(`❌ [FCM] Cannot read/parse GOOGLE_APPLICATION_CREDENTIALS file ${gac}:`, e.message)
-                return
+            } else if (existsSync(gac)) {
+                try {
+                    const fileContent = readFileSync(gac, 'utf8')
+                    if (!fileContent?.trim()) {
+                        console.error(`❌ [FCM] GOOGLE_APPLICATION_CREDENTIALS file is empty: ${gac}`)
+                        return
+                    }
+                    serviceAccount = JSON.parse(fileContent)
+                    console.log(
+                        `🔍 [FCM] Loaded JSON from file GOOGLE_APPLICATION_CREDENTIALS=${gac} project_id:`,
+                        serviceAccount?.project_id,
+                    )
+                } catch (e) {
+                    console.error(`❌ [FCM] Cannot read/parse GOOGLE_APPLICATION_CREDENTIALS file ${gac}:`, e.message)
+                    return
+                }
+            } else {
+                console.warn(
+                    `⚠️  [FCM] GOOGLE_APPLICATION_CREDENTIALS is not a file path that exists on disk: ${gac.slice(0, 80)}…`,
+                )
             }
-        } else if (gac) {
-            console.warn(`⚠️  [FCM] GOOGLE_APPLICATION_CREDENTIALS is set but file not found: ${gac}`)
         }
 
         // 1) Base64
