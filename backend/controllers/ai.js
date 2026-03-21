@@ -1,65 +1,72 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import Project from '../models/Project.js'
 
-// ── Gemini client (lazy) + common env mistakes ────────────────────────────────
-/** Copy/paste typo: lowercase L instead of I at start of Google API keys */
-function normalizeGeminiApiKey(raw) {
-    if (raw == null || typeof raw !== 'string') return ''
-    const t = raw.trim()
-    if (t.startsWith('AlzaSy')) return `AIzaSy${t.slice(6)}`
-    return t
-}
-
 /**
- * Default model for AI Studio (generativelanguage.googleapis.com).
- * gemini-1.5-flash often returns 404 for newer keys — use 2.0 Flash.
- * Override: GEMINI_MODEL=gemini-2.5-flash (or whatever ListModels shows for your key).
+ * All AI features use Groq only (OpenAI-compatible API).
+ * Set GROQ_API_KEY on the server: https://console.groq.com
+ * Optional: GROQ_MODEL (default llama-3.3-70b-versatile)
  */
-function resolvedGeminiModel() {
-    return (process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim()
-}
 
-let _geminiClient = null
-function getGeminiClient() {
-    const key = normalizeGeminiApiKey(process.env.GEMINI_API_KEY)
-    if (!key) return null
-    if (!_geminiClient) _geminiClient = new GoogleGenerativeAI(key)
-    return _geminiClient
-}
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
-function friendlyGeminiError(err) {
-    const msg = String(err?.message || err || '')
-    if (/MISSING_GEMINI_KEY|missing.*gemini/i.test(msg)) {
-        return 'AI is not configured: set GEMINI_API_KEY on the server (Google AI Studio, starts with AIza).'
-    }
-    if (/API key not valid|API_KEY_INVALID|invalid api key|401|403/i.test(msg)) {
-        return 'Gemini API key is invalid. Copy it again from Google AI Studio — it must start with AIza (not Alza).'
-    }
-    if (/404|not found|is not found for api version/i.test(msg)) {
-        return `Gemini model not available. Set env GEMINI_MODEL to a model your key can use (e.g. gemini-2.0-flash). Current: ${resolvedGeminiModel()}`
-    }
-    if (/429|quota|resource exhausted|rate limit/i.test(msg)) {
-        return 'Gemini quota exceeded or rate limited. Try again later or check Google AI Studio limits.'
-    }
-    return 'AI request failed. Please try again.'
-}
-
-function getModel() {
-    const client = getGeminiClient()
-    if (!client) {
-        const e = new Error('MISSING_GEMINI_KEY')
-        e.code = 'MISSING_GEMINI_KEY'
+function requireGroqKey() {
+    const key = process.env.GROQ_API_KEY?.trim()
+    if (!key) {
+        const e = new Error('GROQ_API_KEY is not set on the server.')
+        e.code = 'NO_GROQ_KEY'
         throw e
     }
-    return client.getGenerativeModel({ model: resolvedGeminiModel() })
+    return key
+}
+
+function resolvedGroqModel() {
+    return (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim()
+}
+
+/** @param {{ role: string, content: string }[]} messages */
+async function groqChatCompletion(messages) {
+    const key = requireGroqKey()
+    const model = resolvedGroqModel()
+    const res = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+            model,
+            messages,
+            max_tokens: 2048,
+            temperature: 0.65,
+        }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+        const err = data?.error?.message || `Groq HTTP ${res.status}`
+        throw new Error(err)
+    }
+    const text = data?.choices?.[0]?.message?.content
+    if (!text || typeof text !== 'string') throw new Error('Empty AI response')
+    return text.trim()
+}
+
+function friendlyAiError(err) {
+    const msg = String(err?.message || err || '')
+    if (/NO_GROQ_KEY|GROQ_API_KEY is not set/i.test(msg)) {
+        return 'AI is not configured. Set GROQ_API_KEY on the server (console.groq.com).'
+    }
+    if (/401|403|invalid.*api|unauthorized/i.test(msg)) {
+        return 'Groq API key is invalid. Check GROQ_API_KEY on the server.'
+    }
+    if (/429|rate limit/i.test(msg)) {
+        return 'AI rate limit reached. Try again in a moment.'
+    }
+    return msg.length > 200 ? 'AI request failed. Please try again.' : msg
 }
 
 // Helper: safely parse JSON from AI text (handles markdown code fences)
 function parseJSON(text, fallback = null) {
     try {
-        // Strip markdown code blocks if present
         const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-        // Extract first JSON object or array
         const objMatch = clean.match(/\{[\s\S]*\}/)
         const arrMatch = clean.match(/\[[\s\S]*\]/)
         if (objMatch) return JSON.parse(objMatch[0])
@@ -74,13 +81,12 @@ function parseJSON(text, fallback = null) {
 export const matchFreelancers = async (req, res) => {
     try {
         const project = await Project.findById(req.params.projectId)
-        if (!project) return res.status(404).json({ error: "Project not found" })
+        if (!project) return res.status(404).json({ error: 'Project not found' })
 
         const User = (await import('../models/User.js')).default
         const freelancers = await User.find({ role: 'freelancer', isBanned: false })
             .select('username skills rating totalProjects bio')
 
-        const model = getModel()
         const prompt = `
 You are a freelancing platform AI assistant.
 
@@ -97,9 +103,8 @@ Return ONLY a JSON array of the top 5 freelancer IDs (most suitable first):
 ["id1","id2","id3","id4","id5"]
         `.trim()
 
-        const result = await model.generateContent(prompt)
-        const text   = result.response.text()
-        const ids    = parseJSON(text, [])
+        const text = await groqChatCompletion([{ role: 'user', content: prompt }])
+        const ids = parseJSON(text, [])
         const matched = Array.isArray(ids)
             ? freelancers.filter(f => ids.includes(f._id.toString()))
             : freelancers.slice(0, 5)
@@ -107,20 +112,20 @@ Return ONLY a JSON array of the top 5 freelancer IDs (most suitable first):
         res.status(200).json(matched)
     } catch (error) {
         console.error('[AI matchFreelancers]', error?.message || error)
-        res.status(500).json({ error: "AI matchmaking failed" })
+        const status = error?.code === 'NO_GROQ_KEY' ? 503 : 502
+        res.status(status).json({ error: friendlyAiError(error) })
     }
 }
 
-// ── AI Writing Assistant — generate project description from keywords ──────────
+// ── AI Writing Assistant — generate project description from keywords ─────────
 export const generateDescription = async (req, res) => {
     try {
         const { keywords, category } = req.body
 
         if (!keywords && !category) {
-            return res.status(400).json({ error: "Please provide keywords or category" })
+            return res.status(400).json({ error: 'Please provide keywords or category' })
         }
 
-        const model = getModel()
         const prompt = `
 Write a professional freelancing project description for a project in the "${category || 'General'}" category.
 Keywords/Title: ${keywords || category}
@@ -130,14 +135,12 @@ EN: [Write 3-4 clear, professional sentences in English describing the project, 
 AR: [اكتب 3-4 جمل واضحة واحترافية باللغة العربية تصف المشروع وما يحتاجه العميل والمهارات المطلوبة]
         `.trim()
 
-        const result = await model.generateContent(prompt)
-        const text   = result.response.text()
-
+        const text = await groqChatCompletion([{ role: 'user', content: prompt }])
         res.status(200).json({ description: text })
     } catch (error) {
         console.error('[AI generateDescription]', error?.message || error)
-        const status = error?.code === 'MISSING_GEMINI_KEY' ? 503 : 502
-        res.status(status).json({ error: friendlyGeminiError(error) })
+        const status = error?.code === 'NO_GROQ_KEY' ? 503 : 502
+        res.status(status).json({ error: friendlyAiError(error) })
     }
 }
 
@@ -147,20 +150,21 @@ export const suggestPrice = async (req, res) => {
         const { category, description, skills } = req.body
 
         if (!category) {
-            return res.status(400).json({ error: "Please provide a category" })
+            return res.status(400).json({ error: 'Please provide a category' })
         }
 
-        // Get historical data from completed projects
         const similar = await Project.find({
             category,
             status: 'completed',
-        }).select('budget').limit(20)
+        })
+            .select('budget')
+            .limit(20)
 
-        const avgBudget = similar.length > 0
-            ? Math.round(similar.reduce((sum, p) => sum + (p.budget || 0), 0) / similar.length)
-            : null
+        const avgBudget =
+            similar.length > 0
+                ? Math.round(similar.reduce((sum, p) => sum + (p.budget || 0), 0) / similar.length)
+                : null
 
-        const model = getModel()
         const prompt = `
 You are a pricing expert for a freelancing marketplace in the Arab region.
 
@@ -174,43 +178,40 @@ Suggest a realistic price range in USD. Return ONLY valid JSON (no markdown, no 
 {"min": 100, "max": 500, "recommended": 250, "reason": "Short 1-sentence explanation"}
         `.trim()
 
-        const result = await model.generateContent(prompt)
-        const text   = result.response.text()
+        const text = await groqChatCompletion([{ role: 'user', content: prompt }])
         const pricing = parseJSON(text)
 
         if (!pricing || typeof pricing.recommended !== 'number') {
-            // Fallback pricing based on category
             const fallbacks = {
-                'Design':      { min: 100, max: 800,  recommended: 300,  reason: 'Based on typical design project rates' },
-                'Development': { min: 200, max: 2000, recommended: 700,  reason: 'Based on typical development project rates' },
-                'Writing':     { min: 50,  max: 400,  recommended: 150,  reason: 'Based on typical writing project rates' },
-                'Marketing':   { min: 100, max: 600,  recommended: 250,  reason: 'Based on typical marketing project rates' },
-                'Video':       { min: 150, max: 1000, recommended: 400,  reason: 'Based on typical video project rates' },
-                'Translation': { min: 50,  max: 300,  recommended: 120,  reason: 'Based on typical translation project rates' },
+                Design: { min: 100, max: 800, recommended: 300, reason: 'Based on typical design project rates' },
+                Development: { min: 200, max: 2000, recommended: 700, reason: 'Based on typical development project rates' },
+                Writing: { min: 50, max: 400, recommended: 150, reason: 'Based on typical writing project rates' },
+                Marketing: { min: 100, max: 600, recommended: 250, reason: 'Based on typical marketing project rates' },
+                Video: { min: 150, max: 1000, recommended: 400, reason: 'Based on typical video project rates' },
+                Translation: { min: 50, max: 300, recommended: 120, reason: 'Based on typical translation project rates' },
             }
             return res.status(200).json(
-                fallbacks[category] || { min: 100, max: 1000, recommended: 350, reason: 'Estimated based on market rates' }
+                fallbacks[category] || { min: 100, max: 1000, recommended: 350, reason: 'Estimated based on market rates' },
             )
         }
 
         res.status(200).json(pricing)
     } catch (error) {
         console.error('[AI suggestPrice]', error?.message || error)
-        const status = error?.code === 'MISSING_GEMINI_KEY' ? 503 : 502
-        res.status(status).json({ error: friendlyGeminiError(error) })
+        const status = error?.code === 'NO_GROQ_KEY' ? 503 : 502
+        res.status(status).json({ error: friendlyAiError(error) })
     }
 }
 
-// ── Skill Extraction — suggest skills from bio/portfolio description ────────────
+// ── Skill Extraction — suggest skills from bio/portfolio description ───────────
 export const extractSkills = async (req, res) => {
     try {
         const { bio, portfolioText } = req.body
 
         if (!bio && !portfolioText) {
-            return res.status(400).json({ error: "Please provide bio or portfolio text" })
+            return res.status(400).json({ error: 'Please provide bio or portfolio text' })
         }
 
-        const model = getModel()
         const prompt = `
 Analyze this freelancer's bio and extract relevant professional skills.
 
@@ -221,19 +222,18 @@ Return ONLY a JSON array of skill strings (max 10 skills, no markdown):
 ["Skill1", "Skill2", "Skill3"]
         `.trim()
 
-        const result = await model.generateContent(prompt)
-        const text   = result.response.text()
+        const text = await groqChatCompletion([{ role: 'user', content: prompt }])
         const skills = parseJSON(text, [])
 
         res.status(200).json({ skills: Array.isArray(skills) ? skills : [] })
     } catch (error) {
         console.error('[AI extractSkills]', error?.message || error)
-        const status = error?.code === 'MISSING_GEMINI_KEY' ? 503 : 502
-        res.status(status).json({ error: friendlyGeminiError(error) })
+        const status = error?.code === 'NO_GROQ_KEY' ? 503 : 502
+        res.status(status).json({ error: friendlyAiError(error) })
     }
 }
 
-// ── In-app AI assistant (OpenAI GPT when OPENAI_API_KEY is set, else Gemini) ──
+// ── In-app AI assistant (chat) ────────────────────────────────────────────────
 
 const CHAT_SYSTEM = `You are Fursa Assistant, a helpful AI for the Fursa freelancing marketplace (clients and freelancers in the MENA region).
 Answer clearly and concisely. You may help with: posting projects, bidding, pricing ideas, skills, contracts, and general freelancing tips.
@@ -259,54 +259,6 @@ function normalizeChatMessages(raw) {
     return out
 }
 
-async function openaiChatCompletion(messages) {
-    const key = process.env.OPENAI_API_KEY
-    if (!key) return null
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-            model,
-            messages: [{ role: 'system', content: CHAT_SYSTEM }, ...messages],
-            max_tokens: 1200,
-            temperature: 0.65,
-        }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-        const err = data?.error?.message || `OpenAI HTTP ${res.status}`
-        throw new Error(err)
-    }
-    const text = data?.choices?.[0]?.message?.content
-    if (!text || typeof text !== 'string') throw new Error('Empty AI response')
-    return text.trim()
-}
-
-async function geminiChatCompletion(messages) {
-    const client = getGeminiClient()
-    if (!client) throw new Error('No AI provider configured')
-    const model = client.getGenerativeModel({
-        model: resolvedGeminiModel(),
-        systemInstruction: CHAT_SYSTEM,
-    })
-    const last = messages[messages.length - 1]
-    const history = []
-    for (let i = 0; i < messages.length - 1; i++) {
-        const m = messages[i]
-        if (m.role === 'user') history.push({ role: 'user', parts: [{ text: m.content }] })
-        else history.push({ role: 'model', parts: [{ text: m.content }] })
-    }
-    const chat = model.startChat({ history })
-    const result = await chat.sendMessage(last.content)
-    const text = result.response.text()
-    if (!text || !String(text).trim()) throw new Error('Empty AI response')
-    return String(text).trim()
-}
-
 /** POST body: { messages: [{ role: 'user'|'assistant', content: string }] } */
 export const chatAssistant = async (req, res) => {
     try {
@@ -317,29 +269,11 @@ export const chatAssistant = async (req, res) => {
             })
         }
 
-        let reply
-        if (process.env.OPENAI_API_KEY) {
-            try {
-                reply = await openaiChatCompletion(messages)
-            } catch (e) {
-                console.error('[AI chat OpenAI]', e?.message || e)
-                if (normalizeGeminiApiKey(process.env.GEMINI_API_KEY)) {
-                    reply = await geminiChatCompletion(messages)
-                } else {
-                    return res.status(502).json({ error: e?.message || 'AI chat failed' })
-                }
-            }
-        } else if (normalizeGeminiApiKey(process.env.GEMINI_API_KEY)) {
-            reply = await geminiChatCompletion(messages)
-        } else {
-            return res.status(503).json({
-                error: 'AI chat is not configured. Set OPENAI_API_KEY or GEMINI_API_KEY on the server.',
-            })
-        }
-
+        const reply = await groqChatCompletion([{ role: 'system', content: CHAT_SYSTEM }, ...messages])
         res.status(200).json({ reply })
     } catch (error) {
         console.error('[AI chatAssistant]', error?.message || error)
-        res.status(500).json({ error: error?.message || 'AI chat failed. Please try again.' })
+        const status = error?.code === 'NO_GROQ_KEY' ? 503 : 502
+        res.status(status).json({ error: friendlyAiError(error) })
     }
 }
