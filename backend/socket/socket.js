@@ -15,7 +15,9 @@ const io = new Server(server, {
 const userSocketMap = {}
 
 export const getRecipientSocketId = (recipientId) => {
-    const userData = userSocketMap[recipientId]
+    if (recipientId == null) return null
+    const key = String(recipientId)
+    const userData = userSocketMap[key]
     return userData ? userData.socketId : null
 }
 
@@ -24,16 +26,34 @@ export const emitToAdmins = (event, data) => {
     io.to('admin-room').emit(event, data)
 }
 
+/** Freelancers browsing open projects join this room */
+export const emitToFreelancers = (event, data) => {
+    io.to('freelancers-room').emit(event, data)
+}
+
+/** Per-client room: `client:<userId>` — multi-device + targeted updates */
+export const emitToClientRoom = (clientUserId, event, data) => {
+    if (clientUserId == null) return
+    io.to(`client:${String(clientUserId)}`).emit(event, data)
+}
+
 io.on("connection", socket => {
     console.log("socket connected", socket.id)
 
-    const userId = socket.handshake.query.userId
-    const role   = socket.handshake.query.role
+    const userIdRaw = socket.handshake.query.userId
+    const role      = socket.handshake.query.role
+    const userId    = userIdRaw && userId !== "undefined" ? String(userIdRaw) : null
 
-    if (userId && userId !== "undefined") {
+    if (userId) {
         userSocketMap[userId] = {
             socketId: socket.id,
             onlineAt: Date.now()
+        }
+        if (role === 'client') {
+            socket.join(`client:${userId}`)
+        }
+        if (role === 'freelancer') {
+            socket.join('freelancers-room')
         }
     }
 
@@ -106,7 +126,7 @@ io.on("connection", socket => {
         console.log("user disconnected", socket.id)
         for (const [id, data] of Object.entries(userSocketMap)) {
             if (data.socketId === socket.id) {
-                delete userSocketMap[id]
+                delete userSocketMap[String(id)]
                 break
             }
         }

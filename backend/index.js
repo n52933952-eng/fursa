@@ -19,6 +19,7 @@ import serviceRoute from './routes/service.js'
 import messageRoute from './routes/message.js'
 import milestoneRoute from './routes/milestone.js'
 import walletRoute from './routes/wallet.js'
+import paymentsRoute from './routes/payments.js'
 import reviewRoute from './routes/review.js'
 import disputeRoute from './routes/dispute.js'
 import adminRoute from './routes/admin.js'
@@ -54,6 +55,7 @@ app.use("/api/service", serviceRoute)
 app.use("/api/message", messageRoute)
 app.use("/api/milestone", milestoneRoute)
 app.use("/api/wallet", walletRoute)
+app.use("/api/payments", paymentsRoute)
 app.use("/api/review", reviewRoute)
 app.use("/api/dispute", disputeRoute)
 app.use("/api/admin", adminRoute)

@@ -2,6 +2,7 @@ import User from '../models/User.js'
 import Project from '../models/Project.js'
 import Transaction from '../models/Transaction.js'
 import Dispute from '../models/Dispute.js'
+import { PLATFORM_FEE_RATE, PLATFORM_FEE_PERCENT } from '../config/platformFee.js'
 
 export const getStats = async (req, res) => {
     try {
@@ -17,10 +18,23 @@ export const getStats = async (req, res) => {
             User.countDocuments({ createdAt: { $gte: startOfMonth } })
         ])
 
+        // Sum of admin→freelancer releases (gross payout volume through the platform).
+        // This is NOT "platform profit" unless you deduct a fee in the release flow.
         const releaseTransactions = await Transaction.find({ type: 'release' })
         const totalRevenue = releaseTransactions.reduce((sum, t) => sum + t.amount, 0)
+        // Same % applied to every release in DB → estimated platform share (reporting)
+        const estimatedPlatformFees = Math.round(totalRevenue * PLATFORM_FEE_RATE * 100) / 100
 
-        res.status(200).json({ totalUsers, totalProjects, activeProjects, openDisputes, totalRevenue, newUsersThisMonth })
+        res.status(200).json({
+            totalUsers,
+            totalProjects,
+            activeProjects,
+            openDisputes,
+            totalRevenue,
+            platformFeePercent: PLATFORM_FEE_PERCENT,
+            estimatedPlatformFees,
+            newUsersThisMonth,
+        })
     } catch (error) {
         res.status(500).json({ error: "Failed to get stats" })
     }
@@ -33,16 +47,17 @@ export const getMonthlyRevenue = async (req, res) => {
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
 
         const [txData, userCounts] = await Promise.all([
+            // Only `release` = money paid out to freelancers (matches getStats totalRevenue).
+            // Do NOT sum all types — escrow/deposit rows would double-count the same project cash.
             Transaction.aggregate([
-                { $match: { createdAt: { $gte: sixMonthsAgo } } },
+                { $match: { createdAt: { $gte: sixMonthsAgo }, type: 'release' } },
                 {
                     $group: {
                         _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
                         revenue: { $sum: '$amount' },
+                        // Illustrative 10% platform fee (not auto-deducted in wallet flow unless you add that)
                         fees: {
-                            $sum: {
-                                $cond: [{ $eq: ['$type', 'release'] }, { $multiply: ['$amount', 0.1] }, 0]
-                            }
+                            $sum: { $multiply: ['$amount', PLATFORM_FEE_RATE] }
                         },
                         count: { $sum: 1 }
                     }

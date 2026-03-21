@@ -4,7 +4,13 @@ import Contract from '../models/Contract.js'
 import Wallet from '../models/Wallet.js'
 import Transaction from '../models/Transaction.js'
 import Notification from '../models/Notification.js'
-import { getRecipientSocketId, io, emitToAdmins } from '../socket/socket.js'
+import {
+    getRecipientSocketId,
+    io,
+    emitToAdmins,
+    emitToFreelancers,
+    emitToClientRoom,
+} from '../socket/socket.js'
 import { pushNewProposal, pushProposalAccepted } from '../services/fcm.js'
 
 export const submitProposal = async (req, res) => {
@@ -30,13 +36,42 @@ export const submitProposal = async (req, res) => {
             link: `/project/${projectId}`
         })
         await notification.save()
-        const clientSocketId = getRecipientSocketId(project.clientId.toString())
+        const notifPlain = notification.toObject ? notification.toObject() : notification
+        const clientIdStr = String(project.clientId)
+
+        const clientSocketId = getRecipientSocketId(clientIdStr)
         if (clientSocketId) {
-            io.to(clientSocketId).emit("newNotification", notification)
+            io.to(clientSocketId).emit('newNotification', notifPlain)
+            io.to(clientSocketId).emit('proposalReceived', {
+                projectId: String(projectId),
+                projectTitle: project.title,
+                freelancerUsername: req.user.username,
+                proposalId: String(proposal._id),
+            })
         } else {
-            // Client is offline — push notification
             pushNewProposal(project.clientId, req.user.username, project.title, projectId)
         }
+
+        emitToClientRoom(clientIdStr, 'clientProjectsChanged', {
+            reason: 'newProposal',
+            projectId: String(projectId),
+        })
+        emitToClientRoom(clientIdStr, 'projectProposalsUpdated', { projectId: String(projectId) })
+        emitToFreelancers('openProjectsChanged', {
+            reason: 'newProposal',
+            projectId: String(projectId),
+        })
+        emitToFreelancers('projectProposalsUpdated', { projectId: String(projectId) })
+        emitToAdmins('adminUpdate', {
+            type: 'newProposal',
+            data: {
+                projectId: String(projectId),
+                projectTitle: project.title,
+                bid: proposal.bid,
+                freelancerUsername: req.user.username,
+                proposalId: String(proposal._id),
+            },
+        })
 
         res.status(201).json(proposal)
     } catch (error) {
@@ -127,11 +162,12 @@ export const acceptProposal = async (req, res) => {
         })
         await notification.save()
         const freelancerSocketId = getRecipientSocketId(proposal.freelancerId.toString())
+        const flNotifPlain = notification.toObject ? notification.toObject() : notification
         if (freelancerSocketId) {
-            io.to(freelancerSocketId).emit('newNotification', notification)
+            io.to(freelancerSocketId).emit('newNotification', flNotifPlain)
             io.to(freelancerSocketId).emit('proposalAccepted', {
-                proposalId:   proposal._id,
-                projectId:    proposal.projectId,
+                proposalId:   String(proposal._id),
+                projectId:    String(proposal.projectId),
                 projectTitle: project.title,
                 bid:          proposal.bid,
             })
@@ -148,8 +184,25 @@ export const acceptProposal = async (req, res) => {
             body:   `$${proposal.bid} has been deducted from your wallet and locked in escrow for: "${project.title}". It will be released once the project is approved.`,
         })
         await clientNotif.save()
+        const clientEscrowPlain = clientNotif.toObject ? clientNotif.toObject() : clientNotif
         const clientSocketId = getRecipientSocketId(req.user._id.toString())
-        if (clientSocketId) io.to(clientSocketId).emit('newNotification', clientNotif)
+        if (clientSocketId) io.to(clientSocketId).emit('newNotification', clientEscrowPlain)
+
+        emitToFreelancers('openProjectsChanged', {
+            reason: 'projectFilled',
+            projectId: String(proposal.projectId),
+        })
+        emitToClientRoom(req.user._id, 'clientProjectsChanged', {
+            reason: 'proposalAccepted',
+            projectId: String(proposal.projectId),
+        })
+
+        const statusPayload = {
+            projectId: String(proposal.projectId),
+            status: 'in-progress',
+        }
+        emitToClientRoom(req.user._id, 'projectUpdated', statusPayload)
+        emitToFreelancers('projectUpdated', statusPayload)
 
         // Notify admin
         emitToAdmins('adminUpdate', {

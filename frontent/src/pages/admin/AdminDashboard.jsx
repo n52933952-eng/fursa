@@ -106,29 +106,10 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!socket) return
 
-    const handle = ({ type, data }) => {
+    const handle = () => {
       setLastUpdate(new Date())
-
-      if (type === 'newUser') {
-        setStats(prev => prev ? { ...prev, totalUsers: prev.totalUsers + 1 } : prev)
-        setUsers(prev => [data, ...prev].slice(0, 5))
-      }
-
-      if (type === 'newProject') {
-        setStats(prev => prev ? {
-          ...prev,
-          activeProjects: data.status === 'in-progress' ? prev.activeProjects + 1 : prev.activeProjects
-        } : prev)
-      }
-
-      if (type === 'newDispute') {
-        setStats(prev => prev ? { ...prev, openDisputes: prev.openDisputes + 1 } : prev)
-        setDisputes(prev => [data, ...prev].slice(0, 4))
-      }
-
-      if (type === 'newTransaction' && data.type === 'release') {
-        setStats(prev => prev ? { ...prev, totalRevenue: (prev.totalRevenue || 0) + data.amount } : prev)
-      }
+      // Full refetch so stats, charts, and lists stay in sync (new project, bid, user, dispute, etc.)
+      fetchData()
     }
 
     socket.on('adminUpdate', handle)

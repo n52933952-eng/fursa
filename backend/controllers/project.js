@@ -4,7 +4,7 @@ import Contract from '../models/Contract.js'
 import Wallet from '../models/Wallet.js'
 import Transaction from '../models/Transaction.js'
 import Notification from '../models/Notification.js'
-import { getRecipientSocketId, io, emitToAdmins } from '../socket/socket.js'
+import { getRecipientSocketId, io, emitToAdmins, emitToFreelancers, emitToClientRoom } from '../socket/socket.js'
 import { pushPaymentReleased, pushProjectComplete } from '../services/fcm.js'
 
 export const createProject = async (req, res) => {
@@ -17,10 +17,22 @@ export const createProject = async (req, res) => {
         })
         await newProject.save()
 
-        // Notify admin dashboard in real-time
-        emitToAdmins('adminUpdate', { type: 'newProject', data: newProject })
+        const populated = await Project.findById(newProject._id)
+            .populate('clientId', 'username profilePic rating')
+            .lean()
+        const projectPayload = JSON.parse(JSON.stringify(populated || newProject))
 
-        res.status(201).json(newProject)
+        // Admin dashboard
+        emitToAdmins('adminUpdate', { type: 'newProject', data: projectPayload })
+        // Freelancers: refresh browse feed without reload
+        emitToFreelancers('openProjectsChanged', { reason: 'newProject', project: projectPayload })
+        // Client (same account, other device / Home list)
+        emitToClientRoom(req.user._id, 'clientProjectsChanged', {
+            reason: 'created',
+            projectId: String(newProject._id),
+        })
+
+        res.status(201).json(projectPayload)
     } catch (error) {
         res.status(500).json({ error: "Failed to create project" })
     }

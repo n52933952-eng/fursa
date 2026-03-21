@@ -118,7 +118,7 @@ export default function AdminAnalytics() {
         {[
           { label: 'Total Users',       labelAr: 'المستخدمون',     value: stats?.totalUsers ?? 0,        color: '#4299E1', icon: FiUsers,        sub: `+${stats?.newUsersThisMonth ?? 0} this month` },
           { label: 'Total Projects',    labelAr: 'المشاريع',       value: stats?.totalProjects ?? 0,     color: '#9F7AEA', icon: FiBriefcase,    sub: `${stats?.activeProjects ?? 0} active` },
-          { label: 'Platform Revenue',  labelAr: 'إيرادات المنصة', value: `$${Math.round((stats?.totalRevenue ?? 0) * 0.1).toLocaleString()}`, color: '#48BB78', icon: FiDollarSign, sub: '10% of releases' },
+          { label: 'Est. platform fees', labelAr: 'رسوم المنصة (تقديري)', value: `$${(stats?.estimatedPlatformFees ?? 0).toLocaleString()}`, color: '#48BB78', icon: FiDollarSign, sub: `${stats?.platformFeePercent ?? 10}% of each release (auto)` },
           { label: 'Open Disputes',     labelAr: 'النزاعات',       value: stats?.openDisputes ?? 0,      color: '#FC8181', icon: FiAlertTriangle, sub: 'needs attention' },
         ].map(c => (
           <Box key={c.label} bg="#1A2E4A" border="1px solid #2A4060" borderRadius="2xl" p={5}>

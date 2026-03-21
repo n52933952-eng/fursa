@@ -42,10 +42,9 @@ export default function AdminProjects() {
   // Real-time: new project or status change
   useEffect(() => {
     if (!socket) return
-    const handle = ({ type, data }) => {
-      if (type === 'newProject') {
-        setProjects(prev => [data, ...prev])
-      } else if (type === 'projectComplete' || type === 'projectReleased') {
+    const handle = ({ type }) => {
+      if (type === 'newProject' || type === 'newProposal' || type === 'proposalAccepted' ||
+          type === 'projectComplete' || type === 'projectReleased') {
         fetchProjects()
       }
     }
