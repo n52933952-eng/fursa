@@ -186,3 +186,114 @@ Return ONLY a JSON array of skill strings (max 10 skills, no markdown):
         res.status(500).json({ error: "Skill extraction failed. Please try again." })
     }
 }
+
+// ── In-app AI assistant (OpenAI GPT when OPENAI_API_KEY is set, else Gemini) ──
+
+const CHAT_SYSTEM = `You are Fursa Assistant, a helpful AI for the Fursa freelancing marketplace (clients and freelancers in the MENA region).
+Answer clearly and concisely. You may help with: posting projects, bidding, pricing ideas, skills, contracts, and general freelancing tips.
+If asked for medical, legal, or financial advice beyond general tips, suggest consulting a professional.
+Support both English and Arabic when the user writes in Arabic.`
+
+const MAX_CHAT_MESSAGES = 24
+const MAX_CHAT_MESSAGE_CHARS = 6000
+
+function normalizeChatMessages(raw) {
+    if (!Array.isArray(raw) || raw.length === 0) return null
+    if (raw.length > MAX_CHAT_MESSAGES) return null
+    const out = []
+    for (const m of raw) {
+        if (!m || typeof m !== 'object') return null
+        const role = m.role
+        const content = typeof m.content === 'string' ? m.content.trim() : ''
+        if (!content || content.length > MAX_CHAT_MESSAGE_CHARS) return null
+        if (role !== 'user' && role !== 'assistant') return null
+        out.push({ role, content })
+    }
+    if (out.length === 0 || out[out.length - 1].role !== 'user') return null
+    return out
+}
+
+async function openaiChatCompletion(messages) {
+    const key = process.env.OPENAI_API_KEY
+    if (!key) return null
+    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+            model,
+            messages: [{ role: 'system', content: CHAT_SYSTEM }, ...messages],
+            max_tokens: 1200,
+            temperature: 0.65,
+        }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+        const err = data?.error?.message || `OpenAI HTTP ${res.status}`
+        throw new Error(err)
+    }
+    const text = data?.choices?.[0]?.message?.content
+    if (!text || typeof text !== 'string') throw new Error('Empty AI response')
+    return text.trim()
+}
+
+async function geminiChatCompletion(messages) {
+    const key = process.env.GEMINI_API_KEY
+    if (!key) throw new Error('No AI provider configured')
+    const model = genAI.getGenerativeModel({
+        model: MODEL,
+        systemInstruction: CHAT_SYSTEM,
+    })
+    const last = messages[messages.length - 1]
+    const history = []
+    for (let i = 0; i < messages.length - 1; i++) {
+        const m = messages[i]
+        if (m.role === 'user') history.push({ role: 'user', parts: [{ text: m.content }] })
+        else history.push({ role: 'model', parts: [{ text: m.content }] })
+    }
+    const chat = model.startChat({ history })
+    const result = await chat.sendMessage(last.content)
+    const text = result.response.text()
+    if (!text || !String(text).trim()) throw new Error('Empty AI response')
+    return String(text).trim()
+}
+
+/** POST body: { messages: [{ role: 'user'|'assistant', content: string }] } */
+export const chatAssistant = async (req, res) => {
+    try {
+        const messages = normalizeChatMessages(req.body?.messages)
+        if (!messages) {
+            return res.status(400).json({
+                error: 'Invalid messages: send a non-empty array ending with a user message (max 24 turns, 6000 chars each).',
+            })
+        }
+
+        let reply
+        if (process.env.OPENAI_API_KEY) {
+            try {
+                reply = await openaiChatCompletion(messages)
+            } catch (e) {
+                console.error('[AI chat OpenAI]', e?.message || e)
+                if (process.env.GEMINI_API_KEY) {
+                    reply = await geminiChatCompletion(messages)
+                } else {
+                    return res.status(502).json({ error: e?.message || 'AI chat failed' })
+                }
+            }
+        } else if (process.env.GEMINI_API_KEY) {
+            reply = await geminiChatCompletion(messages)
+        } else {
+            return res.status(503).json({
+                error: 'AI chat is not configured. Set OPENAI_API_KEY or GEMINI_API_KEY on the server.',
+            })
+        }
+
+        res.status(200).json({ reply })
+    } catch (error) {
+        console.error('[AI chatAssistant]', error?.message || error)
+        res.status(500).json({ error: error?.message || 'AI chat failed. Please try again.' })
+    }
+}

@@ -10,10 +10,13 @@ import { emitToAdmins } from '../socket/socket.js'
 export const signup = async (req, res) => {
     try {
         const { username, email, password, role, interestedCategories } = req.body
+        const resolvedRole = role === 'freelancer' ? 'freelancer' : 'client'
         const cats = sanitizeInterestedCategories(interestedCategories)
-        if (cats.length === 0) {
+        // Clients do not pick feed categories at signup; freelancers must pick at least one.
+        if (resolvedRole === 'freelancer' && cats.length === 0) {
             return res.status(400).json({ error: 'Select at least one project category (Design, Development, etc.)' })
         }
+        const storedCategories = resolvedRole === 'freelancer' ? cats : []
 
         const existingUser = await User.findOne({ $or: [{ email }, { username }] })
         if (existingUser) return res.status(400).json({ error: "Username or email already exists" })
@@ -23,8 +26,8 @@ export const signup = async (req, res) => {
             username,
             email,
             password: hashedPassword,
-            role: role || 'client',
-            interestedCategories: cats,
+            role: resolvedRole,
+            interestedCategories: storedCategories,
         })
         await newUser.save()
 
@@ -171,9 +174,10 @@ export const googleSignIn = async (req, res) => {
                 return res.status(400).json({ error: "role_required" })
             }
             const cats = sanitizeInterestedCategories(interestedCategories)
-            if (cats.length === 0) {
+            if (role === 'freelancer' && cats.length === 0) {
                 return res.status(400).json({ error: 'categories_required' })
             }
+            const storedCategories = role === 'freelancer' ? cats : []
 
             // Generate unique username from email
             let baseUsername = emailNorm.split('@')[0].replace(/[^a-z0-9_]/g, '')
@@ -191,7 +195,7 @@ export const googleSignIn = async (req, res) => {
                 profilePic:   profilePic || '',
                 googleId,
                 authProvider: 'google',
-                interestedCategories: cats,
+                interestedCategories: storedCategories,
             })
             await user.save()
 
