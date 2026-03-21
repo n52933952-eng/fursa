@@ -12,6 +12,7 @@
  */
 
 import admin from 'firebase-admin'
+import { createPrivateKey } from 'node:crypto'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -170,29 +171,58 @@ function validateServiceAccountPem(serviceAccount) {
     return null
 }
 
+/** Paste from browsers / docs often injects zero-width chars — breaks JWT signature. */
+function sanitizePrivateKeyPem(pk) {
+    if (!pk || typeof pk !== 'string') return pk
+    return pk
+        .replace(/\uFEFF/g, '')
+        .replace(/[\u200B-\u200D]/g, '')
+        .replace(/\u00A0/g, ' ')
+        .trim()
+}
+
+/** If Node can't parse the PEM, Google will reject the JWT too. */
+function verifyPrivateKeyLoads(pem) {
+    try {
+        createPrivateKey({ key: pem, format: 'pem' })
+        return null
+    } catch (e) {
+        return e?.message || 'invalid PEM'
+    }
+}
+
 // ─── Initialize Firebase Admin ────────────────────────────────────────────────
 
 export function initializeFCM() {
     try {
-        // 0) File path (best on Render: upload JSON as a "Secret File", mount e.g. /etc/secrets/firebase.json)
+        let serviceAccount
+
+        // 0) GOOGLE_APPLICATION_CREDENTIALS — same as thredtrain file path: readFileSync + JSON.parse + cert()
+        //    (Do NOT use applicationDefault() here; on some hosts the first token fetch still fails with Invalid JWT Signature.)
         const gac = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()
         if (gac && existsSync(gac)) {
-            if (!admin.apps.length) {
-                admin.initializeApp({ credential: admin.credential.applicationDefault() })
+            try {
+                const fileContent = readFileSync(gac, 'utf8')
+                if (!fileContent?.trim()) {
+                    console.error(`❌ [FCM] GOOGLE_APPLICATION_CREDENTIALS file is empty: ${gac}`)
+                    return
+                }
+                serviceAccount = JSON.parse(fileContent)
+                console.log(
+                    `🔍 [FCM] Loaded JSON from GOOGLE_APPLICATION_CREDENTIALS=${gac} (thredtrain-style readFile + cert) project_id:`,
+                    serviceAccount?.project_id,
+                )
+            } catch (e) {
+                console.error(`❌ [FCM] Cannot read/parse GOOGLE_APPLICATION_CREDENTIALS file ${gac}:`, e.message)
+                return
             }
-            isInitialized = true
-            console.log(`✅ [FCM] Firebase Admin initialized (GOOGLE_APPLICATION_CREDENTIALS=${gac})`)
-            return
-        }
-        if (gac && !existsSync(gac)) {
+        } else if (gac) {
             console.warn(`⚠️  [FCM] GOOGLE_APPLICATION_CREDENTIALS is set but file not found: ${gac}`)
         }
 
-        let serviceAccount
-
-        // 1) Base64 (good for Render — single line, less truncation than raw JSON)
+        // 1) Base64
         const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64?.trim()
-        if (b64) {
+        if (!serviceAccount && b64) {
             try {
                 const decoded = Buffer.from(b64, 'base64').toString('utf8')
                 serviceAccount = parseServiceAccountFromEnv(decoded) || JSON.parse(decoded)
@@ -204,8 +234,10 @@ export function initializeFCM() {
                 console.error('❌ [FCM] FIREBASE_SERVICE_ACCOUNT_BASE64 decoded but missing private_key / client_email')
                 return
             }
-        } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-            // 2) Raw JSON — same order as thredtrain: thredtrain-style parse first, then our broader parser
+        }
+
+        // 2) Raw env JSON (thredtrain-style parse first)
+        if (!serviceAccount && process.env.FIREBASE_SERVICE_ACCOUNT) {
             const raw = process.env.FIREBASE_SERVICE_ACCOUNT
             const rawLen = raw.length
             console.log(`🔍 [FCM] FIREBASE_SERVICE_ACCOUNT length: ${rawLen}`)
@@ -222,21 +254,29 @@ export function initializeFCM() {
                 return
             }
             console.log('🔍 [FCM] Parsed OK — project_id:', serviceAccount.project_id)
-        } else {
-            // Fall back to local file
-            const filePath = join(__dirname, '..', 'firebase-service-account.json')
-            if (!existsSync(filePath)) {
-                console.warn('⚠️  [FCM] Push disabled — no firebase-service-account.json and no Firebase env vars')
-                return
-            }
-            serviceAccount = JSON.parse(readFileSync(filePath, 'utf8'))
         }
 
-        // Fix private key newlines
+        // 3) Local backend/firebase-service-account.json (thredtrain: ../ from services/)
+        if (!serviceAccount) {
+            const filePath = join(__dirname, '..', 'firebase-service-account.json')
+            if (!existsSync(filePath)) {
+                console.warn('⚠️  [FCM] Push disabled — no credentials (GAC / env / firebase-service-account.json)')
+                return
+            }
+            try {
+                serviceAccount = JSON.parse(readFileSync(filePath, 'utf8'))
+                console.log('🔍 [FCM] Loaded local firebase-service-account.json project_id:', serviceAccount?.project_id)
+            } catch (e) {
+                console.error('❌ [FCM] Failed to parse firebase-service-account.json:', e.message)
+                return
+            }
+        }
+
+        // Fix private key newlines + strip invisible chars (common paste / dashboard glitches)
         if (serviceAccount?.private_key) {
-            serviceAccount.private_key = serviceAccount.private_key
-                .replace(/\\n/g, '\n')
-                .replace(/\r/g, '')
+            serviceAccount.private_key = sanitizePrivateKeyPem(
+                String(serviceAccount.private_key).replace(/\\n/g, '\n').replace(/\r/g, ''),
+            )
         }
 
         const pemError = validateServiceAccountPem(serviceAccount)
@@ -247,6 +287,18 @@ export function initializeFCM() {
 
         const pemLen = String(serviceAccount.private_key).replace(/\r/g, '').trim().length
         console.log(`🔍 [FCM] private_key PEM length: ${pemLen} chars`)
+
+        const loadErr = verifyPrivateKeyLoads(serviceAccount.private_key)
+        if (loadErr) {
+            console.error(
+                '❌ [FCM] private_key fails OpenSSL/Node parse — PEM is corrupt or truncated (not just Google):',
+                loadErr,
+            )
+            console.error(
+                '   → Use Render Secret File + GOOGLE_APPLICATION_CREDENTIALS, or FIREBASE_SERVICE_ACCOUNT_BASE64 from the original .json file (do not retype).',
+            )
+            return
+        }
 
         if (!admin.apps.length) {
             admin.initializeApp({ credential: admin.credential.cert(serviceAccount) })
@@ -325,6 +377,11 @@ async function sendToUser(userId, { title, body, data = {} }) {
             await User.findByIdAndUpdate(uid, { fcmToken: null })
         }
         console.error('❌ [FCM] sendToUser:', err.message)
+        if (String(err.message).includes('Invalid JWT Signature')) {
+            console.error(
+                '   [FCM hint] Usually: revoked/old key in GCP, or env JSON truncated/corrupt. Fix: new Admin SDK JSON + Render Secret File (GOOGLE_APPLICATION_CREDENTIALS) or FIREBASE_SERVICE_ACCOUNT_BASE64.',
+            )
+        }
         return { success: false, error: err.message }
     }
 }
