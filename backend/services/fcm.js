@@ -107,13 +107,90 @@ function parseServiceAccountFromEnv(rawInput) {
     return null
 }
 
+/**
+ * Same strategy as thredtrain/backend/services/fcmNotifications.js:
+ * JSON.parse first; on failure, normalize actual newlines inside private_key to \n escapes, re-parse;
+ * then turn literal \n in private_key into real newlines for firebase-admin.
+ */
+function parseServiceAccountFromEnvThredtrainStyle(rawInput) {
+    if (!rawInput || typeof rawInput !== 'string') return null
+
+    let envVarValue = stripBom(rawInput).trim()
+    envVarValue = envVarValue.replace(/[\u201c\u201d\u2018\u2019]/g, '"')
+
+    let serviceAccount
+    try {
+        serviceAccount = JSON.parse(envVarValue)
+    } catch {
+        const privateKeyMatch = envVarValue.match(/"private_key"\s*:\s*"([\s\S]*?)"\s*,/)
+        if (!privateKeyMatch) return null
+        const fixedKey = privateKeyMatch[1]
+            .replace(/\r\n/g, '\\n')
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\n')
+        envVarValue = envVarValue.replace(
+            /"private_key"\s*:\s*"[\s\S]*?"\s*,/,
+            `"private_key":"${fixedKey}",`,
+        )
+        try {
+            serviceAccount = JSON.parse(envVarValue)
+        } catch {
+            return null
+        }
+    }
+
+    if (serviceAccount?.private_key) {
+        if (serviceAccount.private_key.includes('\\n')) {
+            serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n')
+        }
+        serviceAccount.private_key = serviceAccount.private_key.replace(/\r/g, '')
+    }
+
+    return serviceAccount?.type === 'service_account' ? serviceAccount : null
+}
+
+/** Detect truncated / broken PEM before Google returns cryptic "Invalid JWT Signature". */
+function validateServiceAccountPem(serviceAccount) {
+    const pk = serviceAccount?.private_key
+    if (!pk || typeof pk !== 'string') return 'missing private_key'
+    const pem = pk.replace(/\r/g, '').trim()
+    const hasBegin = /BEGIN (RSA )?PRIVATE KEY/.test(pem)
+    const hasEnd = /END (RSA )?PRIVATE KEY/.test(pem)
+    if (!hasBegin) return 'private_key missing PEM header'
+    if (!hasEnd) {
+        return (
+            'private_key missing PEM footer — value was almost certainly TRUNCATED in the host env UI. ' +
+            'Fix: Render → Secret File (see env.example.txt) + GOOGLE_APPLICATION_CREDENTIALS, or FIREBASE_SERVICE_ACCOUNT_BASE64 (full file).'
+        )
+    }
+    // RSA PKCS#8 PEM is typically ~1.6k+ chars; truncated dashboard values are often ~400–900
+    if (pem.length < 1200) {
+        return `private_key PEM is only ${pem.length} chars (expected usually 1600+). Truncated env var is the usual cause of invalid_grant / Invalid JWT Signature.`
+    }
+    return null
+}
+
 // ─── Initialize Firebase Admin ────────────────────────────────────────────────
 
 export function initializeFCM() {
     try {
+        // 0) File path (best on Render: upload JSON as a "Secret File", mount e.g. /etc/secrets/firebase.json)
+        const gac = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()
+        if (gac && existsSync(gac)) {
+            if (!admin.apps.length) {
+                admin.initializeApp({ credential: admin.credential.applicationDefault() })
+            }
+            isInitialized = true
+            console.log(`✅ [FCM] Firebase Admin initialized (GOOGLE_APPLICATION_CREDENTIALS=${gac})`)
+            return
+        }
+        if (gac && !existsSync(gac)) {
+            console.warn(`⚠️  [FCM] GOOGLE_APPLICATION_CREDENTIALS is set but file not found: ${gac}`)
+        }
+
         let serviceAccount
 
-        // 1) Base64 (best for Render — avoids quote/newline truncation in the dashboard)
+        // 1) Base64 (good for Render — single line, less truncation than raw JSON)
         const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64?.trim()
         if (b64) {
             try {
@@ -128,19 +205,28 @@ export function initializeFCM() {
                 return
             }
         } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-            // 2) Raw JSON string (single-line JSON is safest on Render)
-            serviceAccount = parseServiceAccountFromEnv(process.env.FIREBASE_SERVICE_ACCOUNT)
+            // 2) Raw JSON — same order as thredtrain: thredtrain-style parse first, then our broader parser
+            const raw = process.env.FIREBASE_SERVICE_ACCOUNT
+            const rawLen = raw.length
+            console.log(`🔍 [FCM] FIREBASE_SERVICE_ACCOUNT length: ${rawLen}`)
+            if (rawLen > 0) {
+                const preview = raw.slice(0, 100).replace(/\s+/g, ' ')
+                console.log(`🔍 [FCM] FIREBASE_SERVICE_ACCOUNT preview: ${preview}${rawLen > 100 ? '…' : ''}`)
+            }
+            serviceAccount =
+                parseServiceAccountFromEnvThredtrainStyle(raw) ?? parseServiceAccountFromEnv(raw)
             if (!serviceAccount) {
                 console.error(
-                    '❌ [FCM] FIREBASE_SERVICE_ACCOUNT is not valid JSON. Fix: (A) paste one-line JSON {...} only, or (B) set FIREBASE_SERVICE_ACCOUNT_BASE64 (base64 of the file). See backend/env.example.txt',
+                    '❌ [FCM] FIREBASE_SERVICE_ACCOUNT is not valid JSON. Fix: Secret file + GOOGLE_APPLICATION_CREDENTIALS, or FIREBASE_SERVICE_ACCOUNT_BASE64. See backend/env.example.txt',
                 )
                 return
             }
+            console.log('🔍 [FCM] Parsed OK — project_id:', serviceAccount.project_id)
         } else {
             // Fall back to local file
             const filePath = join(__dirname, '..', 'firebase-service-account.json')
             if (!existsSync(filePath)) {
-                console.warn('⚠️  [FCM] Push disabled — no firebase-service-account.json and no FIREBASE_SERVICE_ACCOUNT env var')
+                console.warn('⚠️  [FCM] Push disabled — no firebase-service-account.json and no Firebase env vars')
                 return
             }
             serviceAccount = JSON.parse(readFileSync(filePath, 'utf8'))
@@ -152,6 +238,15 @@ export function initializeFCM() {
                 .replace(/\\n/g, '\n')
                 .replace(/\r/g, '')
         }
+
+        const pemError = validateServiceAccountPem(serviceAccount)
+        if (pemError) {
+            console.error('❌ [FCM]', pemError)
+            return
+        }
+
+        const pemLen = String(serviceAccount.private_key).replace(/\r/g, '').trim().length
+        console.log(`🔍 [FCM] private_key PEM length: ${pemLen} chars`)
 
         if (!admin.apps.length) {
             admin.initializeApp({ credential: admin.credential.cert(serviceAccount) })

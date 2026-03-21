@@ -80,7 +80,9 @@ if (fs.existsSync(frontendDist)) {
     app.get('/', (req, res) => res.json({ message: 'Fursa API is running 🚀', version: '1.0.0' }))
 }
 
-// Initialize Firebase push notifications
+// Initialize Firebase push notifications (same env pattern as thredtrain: FIREBASE_SERVICE_ACCOUNT or file)
+console.log('🔍 [FCM] FIREBASE_SERVICE_ACCOUNT set:', !!process.env.FIREBASE_SERVICE_ACCOUNT)
+console.log('🔍 [FCM] FIREBASE_SERVICE_ACCOUNT length:', process.env.FIREBASE_SERVICE_ACCOUNT?.length || 0)
 initializeFCM()
 
 server.listen(process.env.PORT || 5000, () => {
