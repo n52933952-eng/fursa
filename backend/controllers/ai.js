@@ -10,9 +10,13 @@ function normalizeGeminiApiKey(raw) {
     return t
 }
 
-/** Default model; override with GEMINI_MODEL if Google returns 404 (e.g. gemini-2.0-flash) */
+/**
+ * Default model for AI Studio (generativelanguage.googleapis.com).
+ * gemini-1.5-flash often returns 404 for newer keys — use 2.0 Flash.
+ * Override: GEMINI_MODEL=gemini-2.5-flash (or whatever ListModels shows for your key).
+ */
 function resolvedGeminiModel() {
-    return (process.env.GEMINI_MODEL || 'gemini-1.5-flash').trim()
+    return (process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim()
 }
 
 let _geminiClient = null
