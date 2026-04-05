@@ -9,7 +9,11 @@ const io = new Server(server, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"]
-    }
+    },
+    // Faster cleanup when a client dies without a clean disconnect (e.g. app force-killed).
+    // Default ~45s; this is still gentle enough for normal mobile networks.
+    pingInterval: 12000,
+    pingTimeout: 8000,
 })
 
 const userSocketMap = {}
