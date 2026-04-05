@@ -9,6 +9,7 @@ import AdminUsers from './pages/admin/AdminUsers'
 import AdminProjects from './pages/admin/AdminProjects'
 import AdminDisputes from './pages/admin/AdminDisputes'
 import AdminTransactions from './pages/admin/AdminTransactions'
+import AdminConversations from './pages/admin/AdminConversations'
 
 function App() {
   const { user } = useContext(UserContext)
@@ -24,6 +25,7 @@ function App() {
         <Route path="/admin"              element={<AdminDashboard />} />
         <Route path="/admin/analytics"    element={<AdminAnalytics />} />
         <Route path="/admin/users"        element={<AdminUsers />} />
+        <Route path="/admin/conversations" element={<AdminConversations />} />
         <Route path="/admin/projects"     element={<AdminProjects />} />
         <Route path="/admin/disputes"     element={<AdminDisputes />} />
         <Route path="/admin/transactions" element={<AdminTransactions />} />

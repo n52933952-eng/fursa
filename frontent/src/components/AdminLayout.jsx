@@ -9,7 +9,7 @@ import { UserContext } from '../context/UserContext'
 import FursaLogo from './FursaLogo'
 import {
   FiGrid, FiUsers, FiAlertTriangle, FiDollarSign,
-  FiLogOut, FiShield, FiBriefcase, FiBarChart2, FiMenu
+  FiLogOut, FiShield, FiBriefcase, FiBarChart2, FiMenu, FiMessageCircle
 } from 'react-icons/fi'
 
 const NavItem = ({ icon, label, to, onClose }) => (
@@ -55,6 +55,7 @@ function SidebarContent({ user, onClose, onLogout }) {
       </Text>
       <VStack spacing={1} align="stretch" mb={4} px={3}>
         <NavItem icon={FiUsers}         label="Users / المستخدمون"       to="/admin/users"         onClose={onClose} />
+        <NavItem icon={FiMessageCircle} label="Conversations / المحادثات" to="/admin/conversations" onClose={onClose} />
         <NavItem icon={FiBriefcase}     label="Projects / المشاريع"      to="/admin/projects"      onClose={onClose} />
         <NavItem icon={FiAlertTriangle} label="Disputes / النزاعات"      to="/admin/disputes"      onClose={onClose} />
         <NavItem icon={FiDollarSign}    label="Transactions / المعاملات" to="/admin/transactions"  onClose={onClose} />

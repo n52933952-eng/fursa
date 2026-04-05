@@ -3,6 +3,49 @@ import Conversation from '../models/Conversation.js'
 import { getRecipientSocketId, io } from '../socket/socket.js'
 import { pushNewMessage } from '../services/fcm.js'
 
+/** Sender or admin (participant) may delete a message */
+export const deleteMessage = async (req, res) => {
+    try {
+        const message = await Message.findById(req.params.messageId)
+        if (!message) return res.status(404).json({ error: 'Message not found' })
+
+        const conversation = await Conversation.findById(message.conversationId)
+        if (!conversation) return res.status(404).json({ error: 'Conversation not found' })
+
+        const uid = String(req.user._id)
+        const participantIds = conversation.participants.map((p) => String(p))
+        if (!participantIds.includes(uid)) {
+            return res.status(403).json({ error: 'Not a participant in this conversation' })
+        }
+
+        const isSender = String(message.senderId) === uid
+        const isAdmin = req.user.role === 'admin'
+        if (!isSender && !isAdmin) {
+            return res.status(403).json({ error: 'You can only delete your own messages' })
+        }
+
+        await Message.findByIdAndDelete(message._id)
+
+        if (String(conversation.lastMessage) === String(message._id)) {
+            const prev = await Message.findOne({ conversationId: conversation._id }).sort({ createdAt: -1 })
+            await Conversation.findByIdAndUpdate(conversation._id, {
+                lastMessage: prev?._id || null,
+            })
+        }
+
+        const payload = { messageId: String(message._id), conversationId: String(conversation._id) }
+        for (const pid of conversation.participants) {
+            const sid = getRecipientSocketId(pid)
+            if (sid) io.to(sid).emit('messageDeleted', payload)
+        }
+
+        res.status(200).json({ ok: true, ...payload })
+    } catch (error) {
+        console.error('[deleteMessage]', error?.message || error)
+        res.status(500).json({ error: 'Failed to delete message' })
+    }
+}
+
 export const sendMessage = async (req, res) => {
     try {
         const { recipientId, text, file, fileType } = req.body
@@ -65,7 +108,7 @@ export const getConversations = async (req, res) => {
         const conversations = await Conversation.find({
             participants: { $in: [req.user._id] }
         })
-            .populate('participants', 'username profilePic')
+            .populate('participants', 'username profilePic role email rating isBanned')
             .populate('lastMessage')
             .sort({ updatedAt: -1 })
         res.status(200).json(conversations)

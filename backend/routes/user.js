@@ -8,6 +8,7 @@ import {
     getPaymentMethods,
     addPaymentMethod,
     removePaymentMethod,
+    getSupportAdmin,
 } from '../controllers/user.js'
 import { verifyToken } from '../middleware/verifyToken.js'
 
@@ -15,6 +16,7 @@ const router = express.Router()
 
 router.get("/search", verifyToken, searchFreelancers)
 router.get("/search-chat", verifyToken, searchUsers)
+router.get("/support-admin", verifyToken, getSupportAdmin)
 router.put("/fcm-token", verifyToken, saveFcmToken)
 router.get("/payment-methods", verifyToken, getPaymentMethods)
 router.post("/payment-methods", verifyToken, addPaymentMethod)

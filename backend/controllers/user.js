@@ -5,6 +5,20 @@ import { sanitizeInterestedCategories } from '../config/projectCategories.js'
 const MAX_SAVED_CARDS = 5
 const BRANDS = new Set(['visa', 'mastercard', 'mada', 'amex', 'other'])
 
+/** Client / freelancer: single admin account to open support chat */
+export const getSupportAdmin = async (req, res) => {
+    try {
+        if (req.user.role === 'admin') {
+            return res.status(400).json({ error: 'Use the admin panel for messaging' })
+        }
+        const admin = await User.findOne({ role: 'admin' }).select('username email role profilePic')
+        if (!admin) return res.status(503).json({ error: 'Support is not available' })
+        res.status(200).json(admin)
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to load support contact' })
+    }
+}
+
 export const getProfile = async (req, res) => {
     try {
         const user = await User.findById(req.params.id).select("-password -savedCards")
