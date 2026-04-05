@@ -47,6 +47,24 @@ export const updateProfile = async (req, res) => {
     }
 }
 
+/** Multipart field name: `avatar` — stores under /uploads/avatars/ and sets profilePic */
+export const uploadProfileAvatar = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: "No image uploaded" })
+        const relative = `/uploads/avatars/${req.file.filename}`
+        const updated = await User.findByIdAndUpdate(
+            req.user._id,
+            { profilePic: relative },
+            { new: true }
+        ).select("-password")
+        if (!updated) return res.status(404).json({ error: "User not found" })
+        res.status(200).json(updated)
+    } catch (error) {
+        console.error("[uploadProfileAvatar]", error?.message || error)
+        res.status(500).json({ error: "Failed to upload avatar" })
+    }
+}
+
 export const searchFreelancers = async (req, res) => {
     try {
         const { query, skill, minRating, maxPrice, country } = req.query
