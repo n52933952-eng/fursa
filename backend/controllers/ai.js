@@ -1,5 +1,7 @@
 import Project from '../models/Project.js'
 
+/** @fileoverview AI matchmaking, writing, pricing, skills, and chat assistant. */
+
 /**
  * All AI features use Groq only (OpenAI-compatible API).
  * Set GROQ_API_KEY on the server: https://console.groq.com
@@ -8,6 +10,7 @@ import Project from '../models/Project.js'
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
+/** Throw if GROQ_API_KEY is missing from env. */
 function requireGroqKey() {
     const key = process.env.GROQ_API_KEY?.trim()
     if (!key) {
@@ -18,11 +21,12 @@ function requireGroqKey() {
     return key
 }
 
+/** Return configured Groq model name or default. */
 function resolvedGroqModel() {
     return (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim()
 }
 
-/** @param {{ role: string, content: string }[]} messages */
+/** Send chat messages to Groq and return assistant text. */
 async function groqChatCompletion(messages) {
     const key = requireGroqKey()
     const model = resolvedGroqModel()
@@ -49,6 +53,7 @@ async function groqChatCompletion(messages) {
     return text.trim()
 }
 
+/** Map AI errors to user-friendly messages. */
 function friendlyAiError(err) {
     const msg = String(err?.message || err || '')
     if (/NO_GROQ_KEY|GROQ_API_KEY is not set/i.test(msg)) {
@@ -64,6 +69,7 @@ function friendlyAiError(err) {
 }
 
 // Helper: safely parse JSON from AI text (handles markdown code fences)
+/** Extract and parse JSON from AI response text. */
 function parseJSON(text, fallback = null) {
     try {
         const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
@@ -78,6 +84,7 @@ function parseJSON(text, fallback = null) {
 }
 
 // ── AI Matchmaking — recommend best freelancers for a project ─────────────────
+/** Recommend best freelancers for a project using AI. */
 export const matchFreelancers = async (req, res) => {
     try {
         const project = await Project.findById(req.params.projectId)
@@ -118,6 +125,7 @@ Return ONLY a JSON array of the top 5 freelancer IDs (most suitable first):
 }
 
 // ── AI Writing Assistant — generate project description from keywords ─────────
+/** Generate bilingual project description from keywords. */
 export const generateDescription = async (req, res) => {
     try {
         const { keywords, category } = req.body
@@ -145,6 +153,7 @@ AR: [اكتب 3-4 جمل واضحة واحترافية باللغة العربي
 }
 
 // ── Smart Pricing — suggest budget based on category and historical data ───────
+/** Suggest project budget range from category and history. */
 export const suggestPrice = async (req, res) => {
     try {
         const { category, description, skills } = req.body
@@ -204,6 +213,7 @@ Suggest a realistic price range in USD. Return ONLY valid JSON (no markdown, no 
 }
 
 // ── Skill Extraction — suggest skills from bio/portfolio description ───────────
+/** Extract skill tags from bio or portfolio text. */
 export const extractSkills = async (req, res) => {
     try {
         const { bio, portfolioText } = req.body
@@ -243,6 +253,7 @@ Support both English and Arabic when the user writes in Arabic.`
 const MAX_CHAT_MESSAGES = 24
 const MAX_CHAT_MESSAGE_CHARS = 6000
 
+/** Validate and normalize chat message array from request body. */
 function normalizeChatMessages(raw) {
     if (!Array.isArray(raw) || raw.length === 0) return null
     if (raw.length > MAX_CHAT_MESSAGES) return null
@@ -259,7 +270,7 @@ function normalizeChatMessages(raw) {
     return out
 }
 
-/** POST body: { messages: [{ role: 'user'|'assistant', content: string }] } */
+/** In-app AI chat assistant for freelancing help. */
 export const chatAssistant = async (req, res) => {
     try {
         const messages = normalizeChatMessages(req.body?.messages)

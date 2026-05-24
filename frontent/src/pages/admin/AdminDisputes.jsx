@@ -1,3 +1,4 @@
+// dispute queue — resolve via /api/dispute/:id/resolve
 import {
   Box, Flex, Text, Icon, Badge, HStack, VStack, Avatar,
   Table, Thead, Tbody, Tr, Th, Td, Spinner, Button, SimpleGrid,
@@ -51,6 +52,7 @@ export default function AdminDisputes() {
   const handleResolve = async () => {
     if (!resolution.trim()) return
     try {
+      // winner hardcoded to client for now — backend handles payout split
       await axios.put(`/api/dispute/${selected._id}/resolve`,
         { resolution, winner: 'client' }, { withCredentials: true })
       setDisputes(prev => prev.map(d => d._id === selected._id ? { ...d, status: 'resolved' } : d))

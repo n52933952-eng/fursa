@@ -6,6 +6,8 @@
 
 const DEFAULT_BASE_JORDAN = 'https://secure-jordan.paytabs.com'
 
+/** @fileoverview PayTabs hosted payment page API client. */
+
 function apiBase() {
     return (process.env.PAYTABS_API_BASE || DEFAULT_BASE_JORDAN).replace(/\/$/, '')
 }
@@ -19,6 +21,7 @@ function headers() {
     }
 }
 
+/** Create PayTabs hosted payment page and return redirect URL. */
 export async function createPaytabsPaymentPage({
     amount,
     currency,
@@ -81,6 +84,7 @@ export async function createPaytabsPaymentPage({
     return { redirectUrl, tranRef: data.tran_ref, raw: data }
 }
 
+/** Check if PayTabs callback payload indicates successful payment. */
 export function isPaytabsPaymentSuccessful(body) {
     const pr = body?.payment_result
     if (!pr) return false

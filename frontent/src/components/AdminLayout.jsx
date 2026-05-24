@@ -1,3 +1,4 @@
+// admin shell — sidebar + outlet, clears session cookie on logout
 import {
   Box, Flex, VStack, Text, Icon, Divider, Avatar, Badge,
   Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton,
@@ -29,7 +30,7 @@ const NavItem = ({ icon, label, to, onClose }) => (
   </NavLink>
 )
 
-// Sidebar content extracted so it can be used in both desktop & drawer
+// shared nav — reused in desktop sidebar and mobile drawer
 function SidebarContent({ user, onClose, onLogout }) {
   return (
     <Flex direction="column" h="100%" bg="#0F1E30">
@@ -94,6 +95,7 @@ export default function AdminLayout() {
   const isMobile = useBreakpointValue({ base: true, lg: false })
 
   const handleLogout = async () => {
+    // hit backend to clear httpOnly cookie, then wipe local state
     try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }) } catch {}
     logout()
     navigate('/login')

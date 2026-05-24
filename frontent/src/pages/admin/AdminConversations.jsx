@@ -1,3 +1,4 @@
+// admin DM inbox — message any user, delete msgs, online status from socket
 import {
   Box, Flex, Text, Avatar, Input, Icon, VStack, HStack, Badge, Spinner,
   IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody,
@@ -61,6 +62,7 @@ export default function AdminConversations() {
   const otherParticipant = (conv) =>
     conv?.participants?.find((p) => String(p._id) !== String(user?._id))
 
+  // pendingOther = new chat before first message creates a conversation doc
   const activeOther = useMemo(() => {
     if (pendingOther) return pendingOther
     if (selected) return otherParticipant(selected)
@@ -96,6 +98,7 @@ export default function AdminConversations() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // newMessage + messageDeleted from socket — dedupe by _id
   useEffect(() => {
     if (!socket) return
     const onNew = (msg) => {
@@ -142,6 +145,7 @@ export default function AdminConversations() {
       if (pendingOther) {
         setPendingOther(null)
         await fetchConversations()
+        // first message creates the conv — find it and select
         const { data: convs } = await axios.get('/api/message/conversations', { withCredentials: true })
         const list = Array.isArray(convs) ? convs : []
         setConversations(list)
@@ -158,6 +162,7 @@ export default function AdminConversations() {
   const openNewModal = async () => {
     setUserSearch('')
     try {
+      // non-admin users only — admins can't DM other admins here
       const { data } = await axios.get('/api/admin/users', { withCredentials: true })
       setAllUsers(Array.isArray(data) ? data.filter((u) => u.role !== 'admin') : [])
     } catch {

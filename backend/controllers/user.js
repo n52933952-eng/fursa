@@ -1,11 +1,18 @@
 import mongoose from 'mongoose'
 import User from '../models/User.js'
 import { sanitizeInterestedCategories } from '../config/projectCategories.js'
+import { sanitizeCareer, careerPatternsFromQuery, namePartsFromUser } from '../config/freelancerCareers.js'
+
+function escapeRegex(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 const MAX_SAVED_CARDS = 5
 const BRANDS = new Set(['visa', 'mastercard', 'mada', 'amex', 'other'])
 
-/** Client / freelancer: single admin account to open support chat */
+/** @fileoverview User profiles, search, avatars, FCM tokens, and saved cards. */
+
+/** Return the platform admin contact for support chat. */
 export const getSupportAdmin = async (req, res) => {
     try {
         if (req.user.role === 'admin') {
@@ -19,6 +26,7 @@ export const getSupportAdmin = async (req, res) => {
     }
 }
 
+/** Get public profile for a user by ID. */
 export const getProfile = async (req, res) => {
     try {
         const user = await User.findById(req.params.id).select("-password -savedCards")
@@ -29,25 +37,80 @@ export const getProfile = async (req, res) => {
     }
 }
 
+/** Update logged-in user's profile fields. */
 export const updateProfile = async (req, res) => {
     try {
-        const { bio, skills, country, language, profilePic, portfolio, interestedCategories } = req.body
-        const patch = { bio, skills, country, language, profilePic, portfolio }
+        const {
+            bio, skills, country, language, profilePic, portfolio,
+            interestedCategories, firstName, lastName, career,
+        } = req.body
+
+        const patch = {}
+        if (bio !== undefined) patch.bio = String(bio)
+        if (skills !== undefined) patch.skills = Array.isArray(skills) ? skills.map(String) : []
+        if (country !== undefined) patch.country = String(country).trim()
+        if (language !== undefined) patch.language = language === 'en' ? 'en' : 'ar'
+        if (profilePic !== undefined) patch.profilePic = String(profilePic)
+        if (portfolio !== undefined) patch.portfolio = Array.isArray(portfolio) ? portfolio.map(String) : []
+
+        if (firstName !== undefined) {
+            const fn = String(firstName).trim().slice(0, 80)
+            if (!fn) return res.status(400).json({ error: 'First name cannot be empty' })
+            patch.firstName = fn
+        }
+        if (lastName !== undefined) {
+            const ln = String(lastName).trim().slice(0, 80)
+            if (!ln) return res.status(400).json({ error: 'Last name cannot be empty' })
+            patch.lastName = ln
+        }
+        if (career !== undefined) {
+            if (req.user.role === 'freelancer') {
+                const sanitized = sanitizeCareer(career)
+                if (String(career || '').trim() && !sanitized) {
+                    return res.status(400).json({ error: 'Invalid career. Pick Full Stack, IT, Writing, etc.' })
+                }
+                patch.career = sanitized
+            } else {
+                patch.career = ''
+            }
+        }
         if (interestedCategories !== undefined) {
             patch.interestedCategories = sanitizeInterestedCategories(interestedCategories)
         }
+
+        const nextFirst = patch.firstName ?? req.user.firstName ?? ''
+        const nextLast = patch.lastName ?? req.user.lastName ?? ''
+        const displayUsername = `${nextFirst} ${nextLast}`.trim()
+        if (displayUsername && displayUsername !== req.user.username) {
+            const clash = await User.findOne({
+                username: displayUsername,
+                _id: { $ne: req.user._id },
+            })
+            if (!clash) patch.username = displayUsername.slice(0, 80)
+        }
+
+        if (Object.keys(patch).length === 0) {
+            return res.status(400).json({ error: 'No profile fields to update' })
+        }
+
         const updated = await User.findByIdAndUpdate(
             req.user._id,
             patch,
-            { new: true }
-        ).select("-password")
+            { new: true, runValidators: true }
+        ).select('-password')
+
+        if (!updated) return res.status(404).json({ error: 'User not found' })
         res.status(200).json(updated)
     } catch (error) {
-        res.status(500).json({ error: "Failed to update profile" })
+        console.error('[updateProfile]', error?.message || error)
+        if (error?.code === 11000) {
+            return res.status(400).json({ error: 'This display name is already in use' })
+        }
+        res.status(500).json({ error: 'Failed to update profile' })
     }
 }
 
-/** Multipart field name: `avatar` — stores under /uploads/avatars/ and sets profilePic */
+/** Upload avatar image and set profilePic URL. */
 export const uploadProfileAvatar = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "No image uploaded" })
@@ -65,9 +128,10 @@ export const uploadProfileAvatar = async (req, res) => {
     }
 }
 
+/** Search and rank freelancers by filters and keywords. */
 export const searchFreelancers = async (req, res) => {
     try {
-        const { query, skill, minRating, maxPrice, country } = req.query
+        const { query, skill, minRating, maxPrice, country, career: careerFilter } = req.query
 
         // Base candidates (role + not banned). Keep this strict so ranking is fast.
         let filter = { role: 'freelancer', isBanned: false }
@@ -81,6 +145,14 @@ export const searchFreelancers = async (req, res) => {
             if (!Number.isNaN(mr)) filter.rating = { $gte: mr }
         }
 
+        const careerChip =
+            careerFilter && String(careerFilter).trim() && String(careerFilter).trim().toLowerCase() !== 'all'
+                ? sanitizeCareer(careerFilter) || String(careerFilter).trim()
+                : null
+        if (careerChip) {
+            filter.career = { $regex: `^${escapeRegex(careerChip)}$`, $options: 'i' }
+        }
+
         // Skill chip (UI sends "All" or a real skill)
         const skillValue = skill && String(skill).trim() && String(skill).trim().toLowerCase() !== 'all'
             ? String(skill).trim()
@@ -90,22 +162,49 @@ export const searchFreelancers = async (req, res) => {
         const rawQuery = query && String(query).trim() ? String(query).trim() : ''
         const qLower = rawQuery.toLowerCase()
 
-        // Keyword narrowing: search username/bio/skills for "SEO-like" matching.
         if (rawQuery) {
+            const careerHits = careerPatternsFromQuery(rawQuery)
+            const tokens = qLower.split(/[\s,]+/).map((t) => t.trim()).filter(Boolean)
+
+            const phraseOr = [
+                { firstName: { $regex: escapeRegex(rawQuery), $options: 'i' } },
+                { lastName: { $regex: escapeRegex(rawQuery), $options: 'i' } },
+                { username: { $regex: escapeRegex(rawQuery), $options: 'i' } },
+                { bio: { $regex: escapeRegex(rawQuery), $options: 'i' } },
+                { skills: { $regex: escapeRegex(rawQuery), $options: 'i' } },
+                { career: { $regex: escapeRegex(rawQuery), $options: 'i' } },
+            ]
+            for (const c of careerHits) {
+                phraseOr.push({ career: { $regex: `^${escapeRegex(c)}$`, $options: 'i' } })
+            }
+
+            const tokenAnd = tokens.map((t) => {
+                const safe = escapeRegex(t)
+                const tokCareers = careerPatternsFromQuery(t)
+                const orTok = [
+                    { firstName: { $regex: safe, $options: 'i' } },
+                    { lastName: { $regex: safe, $options: 'i' } },
+                    { username: { $regex: safe, $options: 'i' } },
+                    { bio: { $regex: safe, $options: 'i' } },
+                    { skills: { $regex: safe, $options: 'i' } },
+                    { career: { $regex: safe, $options: 'i' } },
+                ]
+                for (const c of tokCareers) {
+                    orTok.push({ career: { $regex: `^${escapeRegex(c)}$`, $options: 'i' } })
+                }
+                return { $or: orTok }
+            })
+
             filter = {
                 ...filter,
-                $or: [
-                    { username: { $regex: rawQuery, $options: 'i' } },
-                    { bio: { $regex: rawQuery, $options: 'i' } },
-                    { skills: { $regex: rawQuery, $options: 'i' } },
-                ],
+                $or: tokenAnd.length > 0
+                    ? [{ $and: tokenAnd }, ...phraseOr.map((clause) => ({ ...clause }))]
+                    : phraseOr,
             }
         }
 
-        // Pull candidates, then rank in JS by match score.
-        // (No price field exists in User schema right now, so maxPrice is accepted but not used.)
         const candidates = await User.find(filter)
-            .select('username bio skills country rating totalProjects totalReviews profilePic successRate')
+            .select('username firstName lastName career bio skills country rating totalProjects totalReviews profilePic successRate')
             .limit(60)
 
         const tokens = rawQuery
@@ -117,40 +216,54 @@ export const searchFreelancers = async (req, res) => {
             : []
 
         const countryLower = country && String(country).trim() ? String(country).trim().toLowerCase() : ''
+        const queryCareers = careerPatternsFromQuery(rawQuery)
 
         const scored = candidates.map((u) => {
             const freelancer = u.toObject()
 
             const usernameLower = (freelancer.username || '').toLowerCase()
+            const firstLower = (freelancer.firstName || '').toLowerCase()
+            const lastLower = (freelancer.lastName || '').toLowerCase()
+            const careerLower = (freelancer.career || '').toLowerCase()
             const bioLower = (freelancer.bio || '').toLowerCase()
             const skillsLower = Array.isArray(freelancer.skills) ? freelancer.skills.map((s) => String(s).toLowerCase()) : []
             const fCountryLower = (freelancer.country || '').toLowerCase()
+            const nameParts = namePartsFromUser(freelancer)
 
             let score = 0
 
-            // Direct skill chip match
             if (skillValue && skillsLower.includes(skillValue.toLowerCase())) score += 6
+            if (careerChip && careerLower === careerChip.toLowerCase()) score += 8
 
             if (qLower) {
-                // Full query match boosts
+                if (firstLower.includes(qLower) || lastLower.includes(qLower)) score += 4
                 if (usernameLower.includes(qLower)) score += 3
                 if (bioLower.includes(qLower)) score += 3
                 if (skillsLower.some(s => s.includes(qLower))) score += 3
+                if (careerLower.includes(qLower)) score += 5
+                for (const c of queryCareers) {
+                    if (careerLower === c.toLowerCase()) score += 7
+                }
 
-                // Token-level matching for better SEO-like behavior
                 for (const t of tokens) {
+                    if (firstLower === t) score += 4
+                    else if (firstLower.includes(t)) score += 2.5
+                    if (lastLower === t) score += 4
+                    else if (lastLower.includes(t)) score += 2.5
+                    if (nameParts.some((p) => p === t || p.includes(t))) score += 2
                     if (usernameLower.includes(t)) score += 1.5
                     if (bioLower.includes(t)) score += 1.5
                     if (skillsLower.some(s => s === t || s.includes(t))) score += 2.5
+                    for (const c of careerPatternsFromQuery(t)) {
+                        if (careerLower === c.toLowerCase()) score += 6
+                    }
                 }
             }
 
-            // Quality signals
             score += (freelancer.rating ?? 0) * 0.8
             score += (freelancer.totalProjects ?? 0) * 0.03
             score += (freelancer.successRate ?? 0) * 0.2
 
-            // Country preference
             if (countryLower && fCountryLower.includes(countryLower)) score += 2
 
             return { ...freelancer, matchScore: score }
@@ -169,6 +282,7 @@ export const searchFreelancers = async (req, res) => {
     }
 }
 
+/** Save device push notification token for user. */
 export const saveFcmToken = async (req, res) => {
     try {
         const { token } = req.body
@@ -181,7 +295,7 @@ export const saveFcmToken = async (req, res) => {
 }
 
 // Search all users by username (for starting new chat conversations)
-/** Saved card labels for wallet / payouts (metadata only — no full card number). */
+/** List saved payment cards for the logged-in user. */
 export const getPaymentMethods = async (req, res) => {
     try {
         const user = await User.findById(req.user._id).select('savedCards')
@@ -192,6 +306,7 @@ export const getPaymentMethods = async (req, res) => {
     }
 }
 
+/** Add a saved card for wallet payouts. */
 export const addPaymentMethod = async (req, res) => {
     try {
         const { holderName, brand, last4, expiry, nickname } = req.body
@@ -229,6 +344,7 @@ export const addPaymentMethod = async (req, res) => {
     }
 }
 
+/** Remove a saved card by ID. */
 export const removePaymentMethod = async (req, res) => {
     try {
         const { cardId } = req.params
@@ -248,6 +364,7 @@ export const removePaymentMethod = async (req, res) => {
     }
 }
 
+/** Search users by username for starting chats. */
 export const searchUsers = async (req, res) => {
     try {
         const { query } = req.query

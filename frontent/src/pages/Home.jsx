@@ -1,3 +1,4 @@
+// project browse — search + category filter on /api/project
 import { Box, Flex, Grid, Text, Input, Button, Badge, Avatar, HStack, VStack, Icon, Spinner } from '@chakra-ui/react'
 import { FiSearch, FiClock, FiDollarSign, FiStar, FiBriefcase, FiTrendingUp } from 'react-icons/fi'
 import { useEffect, useState, useContext } from 'react'
@@ -86,7 +87,7 @@ export default function Home() {
     setLoading(false)
   }
 
-  useEffect(() => { fetchProjects() }, [category])
+  useEffect(() => { fetchProjects() }, [category]) // re-fetch when category tab changes
 
   return (
     <Box>

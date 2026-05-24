@@ -2,6 +2,10 @@ import mongoose from 'mongoose'
 
 const UserSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
+    firstName: { type: String, default: '' },
+    lastName: { type: String, default: '' },
+    /** e.g. Full Stack, IT, Writing — client search uses this */
+    career: { type: String, default: '' },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     role: { type: String, enum: ['client', 'freelancer', 'admin'], default: 'client' },

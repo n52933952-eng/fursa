@@ -1,3 +1,4 @@
+// wallet — balance, deposit/withdraw, saved payment methods
 import {
   Box,
   Flex,
@@ -78,7 +79,7 @@ export default function Wallet() {
 
   const handleDeposit = async () => {
     try {
-      await axios.post('/api/wallet/deposit', { amount: parseFloat(amount) }, { withCredentials: true })
+      await axios.post('/api/wallet/deposit', { amount: parseFloat(amount) }, { withCredentials: true }) // Tap/PayTabs handled server-side
       toast({ title: 'Deposit successful!', status: 'success', duration: 3000 })
       setAmount('')
     } catch {}

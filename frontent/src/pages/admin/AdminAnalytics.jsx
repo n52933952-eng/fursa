@@ -1,3 +1,4 @@
+// deep-dive analytics — KPIs + charts, socket-triggered refetch
 import {
   Box, Flex, Text, Icon, SimpleGrid, VStack, HStack, Badge, Spinner, Grid
 } from '@chakra-ui/react'
@@ -66,7 +67,7 @@ export default function AdminAnalytics() {
 
   useEffect(() => { fetchAll() }, [])
 
-  // Real-time updates
+  // only refetch when something actually moves the numbers
   useEffect(() => {
     if (!socket) return
     const handle = ({ type }) => {
@@ -78,7 +79,7 @@ export default function AdminAnalytics() {
     return () => socket.off('adminUpdate', handle)
   }, [socket])
 
-  // Derived stats from transactions
+  // client-side rollup from raw tx list (backend doesn't expose this breakdown)
   const txStats = {
     deposit:    transactions.filter(t => t.type === 'deposit').reduce((s, t) => s + t.amount, 0),
     escrow:     transactions.filter(t => t.type === 'escrow').reduce((s, t) => s + t.amount, 0),

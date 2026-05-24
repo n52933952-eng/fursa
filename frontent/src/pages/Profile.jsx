@@ -1,3 +1,4 @@
+// public profile — user info + reviews from /api/user and /api/review
 import { Box, Flex, Text, Avatar, VStack, HStack, Icon, Badge, Button, Tabs, TabList, Tab, TabPanels, TabPanel, SimpleGrid, Spinner } from '@chakra-ui/react'
 import { FiStar, FiMapPin, FiBriefcase, FiDollarSign, FiMessageSquare } from 'react-icons/fi'
 import { useEffect, useState, useContext } from 'react'

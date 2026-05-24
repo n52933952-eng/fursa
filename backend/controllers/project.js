@@ -1,8 +1,4 @@
 import Project from '../models/Project.js'
-
-function escapeRegex(s) {
-    return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
 import Milestone from '../models/Milestone.js'
 import Contract from '../models/Contract.js'
 import Wallet from '../models/Wallet.js'
@@ -11,6 +7,14 @@ import Notification from '../models/Notification.js'
 import { getRecipientSocketId, io, emitToAdmins, emitToFreelancers, emitToClientRoom } from '../socket/socket.js'
 import { pushPaymentReleased, pushProjectComplete } from '../services/fcm.js'
 
+/** Escape special regex characters in search strings. */
+function escapeRegex(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** @fileoverview Project CRUD, browse filters, completion, and payment release. */
+
+/** Create a new client project and notify subscribers. */
 export const createProject = async (req, res) => {
     try {
         const { title, description, category, budgetType, budget, deadline, skills } = req.body
@@ -42,6 +46,7 @@ export const createProject = async (req, res) => {
     }
 }
 
+/** List open projects with optional filters. */
 export const getProjects = async (req, res) => {
     try {
         const { category, minBudget, maxBudget, skill, search } = req.query
@@ -102,6 +107,7 @@ export const getProjects = async (req, res) => {
     }
 }
 
+/** Get single project with client and proposals. */
 export const getProjectById = async (req, res) => {
     try {
         const project = await Project.findById(req.params.id)
@@ -114,6 +120,7 @@ export const getProjectById = async (req, res) => {
     }
 }
 
+/** List projects owned by the logged-in client. */
 export const getMyProjects = async (req, res) => {
     try {
         const projects = await Project.find({ clientId: req.user._id }).sort({ createdAt: -1 })
@@ -124,6 +131,7 @@ export const getMyProjects = async (req, res) => {
 }
 
 // Admin: get ALL projects (no status filter)
+/** List all projects for admin dashboard. */
 export const getAllProjectsAdmin = async (req, res) => {
     try {
         const projects = await Project.find()
@@ -136,6 +144,7 @@ export const getAllProjectsAdmin = async (req, res) => {
 }
 
 // Freelancer: mark project complete → escrow moves from client to admin wallet
+/** Freelancer submits project; escrow moves to admin. */
 export const markProjectComplete = async (req, res) => {
     try {
         const project = await Project.findById(req.params.id)
@@ -218,6 +227,7 @@ export const markProjectComplete = async (req, res) => {
 }
 
 // Admin: release funds from admin wallet → freelancer + complete project
+/** Admin releases payment to freelancer wallet. */
 export const adminReleaseProjectPayment = async (req, res) => {
     try {
         const project = await Project.findById(req.params.id)
@@ -301,6 +311,7 @@ export const adminReleaseProjectPayment = async (req, res) => {
     }
 }
 
+/** Delete a project owned by the client. */
 export const deleteProject = async (req, res) => {
     try {
         const project = await Project.findById(req.params.id)

@@ -1,3 +1,4 @@
+// app entry — providers then routes
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ChakraProvider } from '@chakra-ui/react'

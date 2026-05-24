@@ -1,3 +1,4 @@
+// user list — ban/unban via /api/admin/ban, live newUser socket
 import {
   Box, Flex, Text, Icon, Input, Button, Avatar, Badge,
   HStack, VStack, Table, Thead, Tbody, Tr, Th, Td,
@@ -34,7 +35,7 @@ export default function AdminUsers() {
 
   useEffect(() => { fetchUsers() }, [])
 
-  // Real-time: new user registered
+  // prepend new signups, patch ban status in place
   useEffect(() => {
     if (!socket) return
     const handle = ({ type, data }) => {
@@ -51,7 +52,7 @@ export default function AdminUsers() {
 
   const handleBan = async (id, isBanned) => {
     try {
-      await axios.put(`/api/admin/ban/${id}`, {}, { withCredentials: true })
+      await axios.put(`/api/admin/ban/${id}`, {}, { withCredentials: true }) // toggle — no body needed
       setUsers(prev => prev.map(u => u._id === id ? { ...u, isBanned: !isBanned } : u))
       toast({ title: isBanned ? 'User unbanned' : 'User banned', status: 'success', duration: 2000 })
     } catch {

@@ -14,13 +14,11 @@ async function seed() {
     await mongoose.connect(process.env.MONGO_URI)
     console.log('Connected to MongoDB')
 
-    const existing = await User.findOne({ email: 'admin@fursa.com' })
-    if (existing) {
-        console.log('Admin already exists:', existing.email)
-        process.exit(0)
-    }
-
     const hashed = await bcrypt.hash('pass123', 10)
+
+    // ✅ Delete old record (if any) and recreate fresh
+    await User.deleteOne({ email: 'admin@fursa.com' })
+
     const admin = new User({
         username: 'admin',
         email: 'admin@fursa.com',
@@ -29,6 +27,7 @@ async function seed() {
         isVerified: true,
     })
     await admin.save()
+
     console.log('✅ Admin created successfully!')
     console.log('   Email:    admin@fursa.com')
     console.log('   Password: pass123')

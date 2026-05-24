@@ -1,5 +1,8 @@
 import Contract from '../models/Contract.js'
 
+/** @fileoverview Contract lookup by project. */
+
+/** Get contract details for a project. */
 export const getContractByProject = async (req, res) => {
     try {
         const contract = await Contract.findOne({ projectId: req.params.projectId })

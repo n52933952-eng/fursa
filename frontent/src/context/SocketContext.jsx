@@ -1,3 +1,4 @@
+// socket.io wrapper — online users + push notifications
 import { createContext, useEffect, useState, useContext } from 'react'
 import io from 'socket.io-client'
 import { UserContext } from './UserContext'
@@ -12,6 +13,7 @@ export function SocketContextProvider({ children }) {
   useEffect(() => {
     if (!user?._id) return
 
+    // prod hits same origin; dev goes straight to backend
     const serverUrl = import.meta.env.PROD ? window.location.origin : 'http://localhost:5000'
     const newSocket = io(serverUrl, {
       query: { userId: user._id, role: user.role }
@@ -19,6 +21,7 @@ export function SocketContextProvider({ children }) {
 
     setSocket(newSocket)
 
+    // live online list from socket getOnlineUsers
     newSocket.on('getOnlineUsers', (users) => setOnlineUsers(users))
 
     newSocket.on('newNotification', (notification) => {

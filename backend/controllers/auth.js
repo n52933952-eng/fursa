@@ -1,5 +1,6 @@
 import User from '../models/User.js'
 import { sanitizeInterestedCategories } from '../config/projectCategories.js'
+import { sanitizeCareer } from '../config/freelancerCareers.js'
 import Wallet from '../models/Wallet.js'
 import bcryptjs from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -7,23 +8,40 @@ import nodemailer from 'nodemailer'
 import crypto from 'crypto'
 import { emitToAdmins } from '../socket/socket.js'
 
+/** @fileoverview User signup, login, logout, password reset, and Google sign-in. */
+
+/** Register a new user account and return JWT. */
 export const signup = async (req, res) => {
     try {
-        const { username, email, password, role, interestedCategories } = req.body
+        const { username, email, password, role, interestedCategories, firstName, lastName, career } = req.body
         const resolvedRole = role === 'freelancer' ? 'freelancer' : 'client'
         const cats = sanitizeInterestedCategories(interestedCategories)
+        const fn = String(firstName || '').trim()
+        const ln = String(lastName || '').trim()
+        let un = String(username || '').trim()
+        if (fn || ln) un = `${fn} ${ln}`.trim()
+        if (!un) return res.status(400).json({ error: 'First and last name are required' })
+        if (!fn || !ln) return res.status(400).json({ error: 'Please enter both first name and last name' })
+
         // Clients do not pick feed categories at signup; freelancers must pick at least one.
         if (resolvedRole === 'freelancer' && cats.length === 0) {
             return res.status(400).json({ error: 'Select at least one project category (Design, Development, etc.)' })
         }
+        const storedCareer = resolvedRole === 'freelancer' ? sanitizeCareer(career) : ''
+        if (resolvedRole === 'freelancer' && !storedCareer) {
+            return res.status(400).json({ error: 'Please select your career (Full Stack, IT, Writing, etc.)' })
+        }
         const storedCategories = resolvedRole === 'freelancer' ? cats : []
 
-        const existingUser = await User.findOne({ $or: [{ email }, { username }] })
+        const existingUser = await User.findOne({ $or: [{ email }, { username: un }] })
         if (existingUser) return res.status(400).json({ error: "Username or email already exists" })
 
         const hashedPassword = bcryptjs.hashSync(password, 10)
         const newUser = new User({
-            username,
+            username: un,
+            firstName: fn,
+            lastName: ln,
+            career: storedCareer,
             email,
             password: hashedPassword,
             role: resolvedRole,
@@ -47,7 +65,8 @@ export const signup = async (req, res) => {
     }
 }
 
-export const login = async (req, res) => {
+/** Authenticate user with email and password. */
+export const login =  async(req, res) => {
     try {
         const { email, password } = req.body
 
@@ -72,6 +91,7 @@ export const login = async (req, res) => {
     }
 }
 
+/** Clear auth cookie and end session. */
 export const logout = (req, res) => {
     try {
         res.clearCookie("access").status(200).json({ message: "Logged out successfully" })
@@ -88,6 +108,7 @@ const transporter = nodemailer.createTransport({
     }
 })
 
+/** Send password reset email with token link. */
 export const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body
@@ -119,6 +140,7 @@ export const forgotPassword = async (req, res) => {
     }
 }
 
+/** Set new password using valid reset token. */
 export const resetPassword = async (req, res) => {
     try {
         const { token, newPassword } = req.body
@@ -145,9 +167,10 @@ export const resetPassword = async (req, res) => {
 //
 // Returning user: same Google account again → findOne matches googleId or email → 200 + JWT (no role).
 // Brand-new user: no document → 400 { error: "role_required" } until app sends role once.
+/** Sign in or register user via Google OAuth. */
 export const googleSignIn = async (req, res) => {
     try {
-        const { email, name, googleId, profilePic, role, interestedCategories } = req.body
+        const { email, name, googleId, profilePic, role, interestedCategories, career } = req.body
 
         if (!email || !googleId) {
             return res.status(400).json({ error: "Email and Google ID are required" })
@@ -177,10 +200,19 @@ export const googleSignIn = async (req, res) => {
             if (role === 'freelancer' && cats.length === 0) {
                 return res.status(400).json({ error: 'categories_required' })
             }
+            const storedCareer = role === 'freelancer' ? sanitizeCareer(career) : ''
+            if (role === 'freelancer' && !storedCareer) {
+                return res.status(400).json({ error: 'career_required' })
+            }
             const storedCategories = role === 'freelancer' ? cats : []
 
-            // Generate unique username from email
-            let baseUsername = emailNorm.split('@')[0].replace(/[^a-z0-9_]/g, '')
+            const nameParts = String(name || '').trim().split(/\s+/).filter(Boolean)
+            const firstName = nameParts[0] || ''
+            const lastName = nameParts.slice(1).join(' ') || ''
+
+            // Display username from Google name; fall back to email prefix if empty
+            let baseUsername = `${firstName} ${lastName}`.trim()
+            if (!baseUsername) baseUsername = emailNorm.split('@')[0].replace(/[^a-z0-9_]/g, '')
             let username = baseUsername
             let counter  = 1
             while (await User.findOne({ username })) {
@@ -189,6 +221,9 @@ export const googleSignIn = async (req, res) => {
 
             user = new User({
                 username,
+                firstName,
+                lastName,
+                career:       storedCareer,
                 email:        emailNorm,
                 password:     bcryptjs.hashSync(Math.random().toString(36), 10), // unused placeholder
                 role:         role,

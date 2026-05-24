@@ -13,6 +13,9 @@ import {
 } from '../socket/socket.js'
 import { pushNewProposal, pushProposalAccepted } from '../services/fcm.js'
 
+/** @fileoverview Freelancer proposals, bidding, and client acceptance. */
+
+/** Submit a bid on an open project. */
 export const submitProposal = async (req, res) => {
     try {
         const { projectId, coverLetter, bid, deliveryTime } = req.body
@@ -81,6 +84,7 @@ export const submitProposal = async (req, res) => {
     }
 }
 
+/** List proposals submitted by logged-in freelancer. */
 export const getMyProposals = async (req, res) => {
     try {
         console.log('[getMyProposals] logged-in userId:', req.user?._id)
@@ -93,6 +97,7 @@ export const getMyProposals = async (req, res) => {
     }
 }
 
+/** List all proposals for a project. */
 export const getProposalsByProject = async (req, res) => {
     try {
         const proposals = await Proposal.find({ projectId: req.params.projectId })
@@ -104,6 +109,7 @@ export const getProposalsByProject = async (req, res) => {
     }
 }
 
+/** Accept bid, lock escrow, and create contract. */
 export const acceptProposal = async (req, res) => {
     try {
         const proposal = await Proposal.findById(req.params.id)

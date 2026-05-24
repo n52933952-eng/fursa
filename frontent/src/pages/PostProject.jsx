@@ -1,3 +1,4 @@
+// client-only — create project via POST /api/project
 import { Box, VStack, Text, Input, Button, FormControl, FormLabel, Textarea, Select, HStack, Tag, TagCloseButton, TagLabel, useToast } from '@chakra-ui/react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -12,7 +13,7 @@ export default function PostProject() {
 
   const addSkill = (e) => {
     if (e.key === 'Enter' && skillInput.trim()) {
-      setForm({ ...form, skills: [...form.skills, skillInput.trim()] })
+      setForm({ ...form, skills: [...form.skills, skillInput.trim()] }) // Enter to add, not comma
       setSkillInput('')
     }
   }

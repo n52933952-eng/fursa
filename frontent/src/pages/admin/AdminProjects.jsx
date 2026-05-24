@@ -1,3 +1,4 @@
+// project monitor — admin can force-release escrow on pending-approval
 import {
   Box, Flex, Text, Icon, Input, Badge, HStack, VStack,
   Table, Thead, Tbody, Tr, Th, Td, Spinner, Select, SimpleGrid,
@@ -56,6 +57,7 @@ export default function AdminProjects() {
     if (!window.confirm(`Release all payments for "${projectTitle}" and mark as Completed?`)) return
     setReleasing(projectId)
     try {
+      // admin-release bypasses client approval — pays freelancer + marks completed
       const { data } = await axios.post(
         `/api/project/${projectId}/admin-release`,
         {},

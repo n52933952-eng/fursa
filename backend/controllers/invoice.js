@@ -3,6 +3,9 @@ import Transaction from '../models/Transaction.js'
 import User from '../models/User.js'
 import Project from '../models/Project.js'
 
+/** @fileoverview PDF invoice generation for transactions. */
+
+/** Generate and download PDF invoice for a transaction. */
 export const generateInvoice = async (req, res) => {
     try {
         const transaction = await Transaction.findById(req.params.transactionId)

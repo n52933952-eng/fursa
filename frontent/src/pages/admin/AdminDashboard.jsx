@@ -1,3 +1,4 @@
+// admin home — stats, charts, live refresh via adminUpdate socket
 import {
   Box, Grid, Flex, Text, Icon, VStack, HStack, Avatar, Badge,
   Spinner, SimpleGrid
@@ -81,6 +82,7 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
+      // hit all dashboard endpoints in one go
       const [statsRes, usersRes, disputesRes, revenueRes, categoryRes] = await Promise.all([
         axios.get('/api/admin/stats',           { withCredentials: true }),
         axios.get('/api/admin/users',           { withCredentials: true }),
@@ -102,13 +104,12 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchData() }, [])
 
-  // Real-time socket updates
+  // adminUpdate fires on any platform activity — refetch everything
   useEffect(() => {
     if (!socket) return
 
     const handle = () => {
       setLastUpdate(new Date())
-      // Full refetch so stats, charts, and lists stay in sync (new project, bid, user, dispute, etc.)
       fetchData()
     }
 

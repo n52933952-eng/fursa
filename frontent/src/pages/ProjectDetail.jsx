@@ -1,3 +1,4 @@
+// project detail — view + submit/accept proposals
 import { Box, Flex, Text, Badge, Button, VStack, HStack, Avatar, Icon, Textarea, Input, Spinner, useToast, Divider } from '@chakra-ui/react'
 import { FiClock, FiDollarSign, FiStar, FiSend } from 'react-icons/fi'
 import { useEffect, useState, useContext } from 'react'
@@ -41,6 +42,7 @@ export default function ProjectDetail() {
 
   const acceptProposal = async (proposalId) => {
     try {
+      // triggers escrow + project status change on backend
       await axios.put(`/api/proposal/accept/${proposalId}`, {}, { withCredentials: true })
       toast({ title: 'Proposal accepted! / تم قبول العرض!', status: 'success', duration: 3000 })
     } catch {}

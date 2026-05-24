@@ -18,6 +18,8 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import User from '../models/User.js'
 
+/** @fileoverview Firebase Cloud Messaging push notifications for mobile. */
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname  = dirname(__filename)
 
@@ -193,6 +195,7 @@ function verifyPrivateKeyLoads(pem) {
 
 // ─── Initialize Firebase Admin ────────────────────────────────────────────────
 
+/** Load credentials and initialize Firebase Admin SDK. */
 export function initializeFCM() {
     try {
         let serviceAccount
@@ -345,6 +348,7 @@ function toMongoUserId(userId) {
     return String(userId)
 }
 
+/** Send FCM push notification to a user's device. */
 async function sendToUser(userId, { title, body, data = {} }) {
     if (!isInitialized) return { success: false, error: 'FCM not initialized' }
     const uid = toMongoUserId(userId)
@@ -462,4 +466,5 @@ export async function pushGeneral(userId, title, body, data = {}) {
     return sendToUser(userId, { title, body, data })
 }
 
+/** Return whether FCM is initialized and ready. */
 export const isFCMReady = () => isInitialized

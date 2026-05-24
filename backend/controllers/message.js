@@ -3,7 +3,9 @@ import Conversation from '../models/Conversation.js'
 import { getRecipientSocketId, io } from '../socket/socket.js'
 import { pushNewMessage } from '../services/fcm.js'
 
-/** Sender or admin (participant) may delete a message */
+/** @fileoverview Chat messages and conversation listing. */
+
+/** Delete a message if sender or admin participant. */
 export const deleteMessage = async (req, res) => {
     try {
         const message = await Message.findById(req.params.messageId)
@@ -46,6 +48,7 @@ export const deleteMessage = async (req, res) => {
     }
 }
 
+/** Send a message and notify recipient in realtime. */
 export const sendMessage = async (req, res) => {
     try {
         const { recipientId, text, file, fileType } = req.body
@@ -88,6 +91,7 @@ export const sendMessage = async (req, res) => {
     }
 }
 
+/** Get all messages in a conversation with a user. */
 export const getMessages = async (req, res) => {
     try {
         const { userId } = req.params
@@ -103,6 +107,7 @@ export const getMessages = async (req, res) => {
     }
 }
 
+/** List all conversations for the logged-in user. */
 export const getConversations = async (req, res) => {
     try {
         const conversations = await Conversation.find({

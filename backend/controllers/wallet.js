@@ -3,6 +3,9 @@ import Transaction from '../models/Transaction.js'
 import { emitToAdmins } from '../socket/socket.js'
 import { isWalletSandbox, SANDBOX_DEPOSIT_MAX, walletMetaForClient } from '../config/walletMode.js'
 
+/** @fileoverview User wallet balance, transactions, deposit, and withdraw. */
+
+/** Get wallet balances for logged-in user. */
 export const getWallet = async (req, res) => {
     try {
         const wallet = await Wallet.findOne({ userId: req.user._id })
@@ -14,6 +17,7 @@ export const getWallet = async (req, res) => {
     }
 }
 
+/** List recent wallet transactions for user. */
 export const getTransactions = async (req, res) => {
     try {
         const transactions = await Transaction.find({
@@ -25,6 +29,7 @@ export const getTransactions = async (req, res) => {
     }
 }
 
+/** Add sandbox test funds to wallet balance. */
 export const deposit = async (req, res) => {
     try {
         const amount = Number(req.body?.amount)
@@ -66,6 +71,7 @@ export const deposit = async (req, res) => {
     }
 }
 
+/** Withdraw funds from wallet balance. */
 export const withdraw = async (req, res) => {
     try {
         const { amount } = req.body

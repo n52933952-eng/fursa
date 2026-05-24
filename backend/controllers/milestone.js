@@ -5,6 +5,9 @@ import Project from '../models/Project.js'
 import Notification from '../models/Notification.js'
 import { getRecipientSocketId, io, emitToAdmins } from '../socket/socket.js'
 
+/** @fileoverview Project milestones, review requests, and payment release. */
+
+/** Bulk create milestones for a project. */
 export const createMilestones = async (req, res) => {
     try {
         const { projectId, milestones } = req.body
@@ -17,6 +20,7 @@ export const createMilestones = async (req, res) => {
     }
 }
 
+/** List milestones for a project ordered by step. */
 export const getMilestones = async (req, res) => {
     try {
         const milestones = await Milestone.find({ projectId: req.params.projectId }).sort({ order: 1 })
@@ -26,6 +30,7 @@ export const getMilestones = async (req, res) => {
     }
 }
 
+/** Mark milestone ready for client review. */
 export const requestReview = async (req, res) => {
     try {
         const milestone = await Milestone.findByIdAndUpdate(
@@ -50,6 +55,7 @@ export const requestReview = async (req, res) => {
     }
 }
 
+/** Client releases milestone payment from escrow. */
 export const releasePayment = async (req, res) => {
     try {
         const milestone = await Milestone.findById(req.params.id)

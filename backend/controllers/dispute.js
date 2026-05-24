@@ -2,6 +2,9 @@ import Dispute from '../models/Dispute.js'
 import Project from '../models/Project.js'
 import { emitToAdmins } from '../socket/socket.js'
 
+/** @fileoverview Project dispute creation and listing. */
+
+/** Open a dispute and mark project as disputed. */
 export const createDispute = async (req, res) => {
     try {
         const { projectId, reason } = req.body
@@ -26,6 +29,7 @@ export const createDispute = async (req, res) => {
     }
 }
 
+/** List disputes involving the logged-in user. */
 export const getMyDisputes = async (req, res) => {
     try {
         const disputes = await Dispute.find({

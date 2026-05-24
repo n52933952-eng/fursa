@@ -1,5 +1,8 @@
 import Deliverable from '../models/Deliverable.js'
 
+/** @fileoverview Project file deliverable uploads and listing. */
+
+/** Upload a new deliverable file for a project. */
 export const uploadDeliverable = async (req, res) => {
     try {
         const { projectId, milestoneId, note } = req.body
@@ -28,6 +31,7 @@ export const uploadDeliverable = async (req, res) => {
     }
 }
 
+/** List deliverables for a project by version. */
 export const getDeliverables = async (req, res) => {
     try {
         const deliverables = await Deliverable.find({ projectId: req.params.projectId })

@@ -6,6 +6,8 @@
 
 const TAP_API = 'https://api.tap.company/v2/charges'
 
+/** @fileoverview Tap Payments charge create and retrieve API client. */
+
 function headers() {
     const key = process.env.TAP_SECRET_KEY
     if (!key) throw new Error('TAP_SECRET_KEY missing')
@@ -15,9 +17,7 @@ function headers() {
     }
 }
 
-/**
- * @param {{ amount: number, currency: string, user: { _id: any, username?: string, email?: string }, returnPath?: string }}
- */
+/** Create Tap hosted charge and return payment redirect URL. */
 export async function createTapCharge({ amount, currency, user, returnPath = '/api/payments/tap/return' }) {
     const publicBase = process.env.PUBLIC_API_URL?.replace(/\/$/, '')
     if (!publicBase) throw new Error('PUBLIC_API_URL is required for Tap redirect')
@@ -61,6 +61,7 @@ export async function createTapCharge({ amount, currency, user, returnPath = '/a
     return { chargeId: data.id, redirectUrl: redirect, raw: data }
 }
 
+/** Fetch Tap charge status by charge ID. */
 export async function retrieveTapCharge(chargeId) {
     const r = await fetch(`${TAP_API}/${chargeId}`, { headers: headers() })
     const data = await r.json()

@@ -1,3 +1,4 @@
+// user chat — conversations + real-time newMessage socket
 import { Box, Flex, Text, Avatar, Input, Icon, VStack, HStack, Badge, Spinner } from '@chakra-ui/react'
 import { FiSend, FiPaperclip } from 'react-icons/fi'
 import { useEffect, useState, useContext, useRef } from 'react'
@@ -30,6 +31,7 @@ export default function Chat() {
 
   useEffect(() => {
     if (!socket) return
+    // append incoming msgs to open thread
     socket.on('newMessage', msg => {
       if (selected) setMessages(prev => [...prev, msg])
     })
@@ -48,7 +50,7 @@ export default function Chat() {
     } catch {}
   }
 
-  const isOnline = (userId) => onlineUsers.some(u => u.userId === userId)
+  const isOnline = (userId) => onlineUsers.some(u => u.userId === userId) // from getOnlineUsers socket
 
   return (
     <Flex h="calc(100vh - 140px)" gap={0} borderRadius="2xl" overflow="hidden" border="1px solid #2A4060">

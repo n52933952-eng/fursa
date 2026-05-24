@@ -8,7 +8,9 @@ import { createPaytabsPaymentPage, isPaytabsPaymentSuccessful } from '../service
 
 const MAX_TOPUP = parseInt(process.env.WALLET_TOPUP_MAX || '50000', 10) || 50000
 
-/** e.g. fursa://payment/success — set MOBILE_DEEP_LINK=fursa:// in .env */
+/** @fileoverview Tap and PayTabs wallet top-up payment flows. */
+
+/** Build mobile deep link URL for payment result. */
 function deepLink(subPath) {
     const raw = (process.env.MOBILE_DEEP_LINK || 'fursa://').trim()
     const path = String(subPath).replace(/^\//, '')
@@ -16,6 +18,7 @@ function deepLink(subPath) {
     return `${raw.replace(/\/$/, '')}/${path}`
 }
 
+/** Add funds to wallet and record deposit transaction. */
 async function creditWallet(userId, amount, description) {
     await Wallet.findOneAndUpdate({ userId }, { $inc: { balance: amount } }, { upsert: true })
     const tx = await new Transaction({
@@ -28,6 +31,7 @@ async function creditWallet(userId, amount, description) {
     emitToAdmins('adminUpdate', { type: 'newTransaction', data: tx })
 }
 
+/** Validate top-up amount within allowed range. */
 function validateAmount(amount) {
     const n = Number(amount)
     if (!Number.isFinite(n) || n < 1 || n > MAX_TOPUP) {
@@ -38,6 +42,7 @@ function validateAmount(amount) {
 
 // ─── Tap ───────────────────────────────────────────────────────────────────
 
+/** Create Tap hosted payment for wallet top-up. */
 export const tapCreateCharge = async (req, res) => {
     try {
         const { amount } = req.body || {}
@@ -78,7 +83,7 @@ export const tapCreateCharge = async (req, res) => {
     }
 }
 
-/** After 3DS / hosted page — Tap redirects here with tap_id */
+/** Handle Tap redirect and credit wallet on success. */
 export const tapReturn = async (req, res) => {
     const tapId = req.query.tap_id
     if (!tapId) return res.redirect(deepLink('payment/fail?reason=no_tap_id'))
@@ -134,9 +139,7 @@ export const tapReturn = async (req, res) => {
     res.redirect(deepLink('payment/success'))
 }
 
-/**
- * Tap server webhook (optional idempotency). Verify signature in production using Tap docs.
- */
+/** Process Tap server webhook for completed payments (verify signature in production). */
 export const tapWebhook = async (req, res) => {
     try {
         const body = req.body
@@ -174,6 +177,7 @@ export const tapWebhook = async (req, res) => {
 
 // ─── PayTabs (Hosted Payment Page) ──────────────────────────────────────────
 
+/** Verify PayTabs payload and credit wallet if paid. */
 async function tryCompletePaytabsFromPayload(body) {
     const cartId = body?.cart_id != null ? String(body.cart_id) : ''
     if (!cartId) return { credited: false, reason: 'no_cart' }
@@ -216,6 +220,7 @@ async function tryCompletePaytabsFromPayload(body) {
     return { credited: !!claimed, reason: claimed ? 'ok' : 'race' }
 }
 
+/** Create PayTabs hosted page for wallet top-up. */
 export const paytabsCreatePayment = async (req, res) => {
     try {
         const { amount } = req.body || {}
@@ -265,6 +270,7 @@ export const paytabsCreatePayment = async (req, res) => {
     }
 }
 
+/** Handle PayTabs browser return redirect. */
 export const paytabsReturn = async (req, res) => {
     try {
         await tryCompletePaytabsFromPayload(req.body)
@@ -275,6 +281,7 @@ export const paytabsReturn = async (req, res) => {
     res.redirect(ok ? deepLink('payment/success') : deepLink('payment/fail?reason=paytabs'))
 }
 
+/** Handle PayTabs server callback notification. */
 export const paytabsCallback = async (req, res) => {
     try {
         await tryCompletePaytabsFromPayload(req.body)

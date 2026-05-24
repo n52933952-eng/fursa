@@ -1,3 +1,4 @@
+// main app sidebar — role-gated nav items + logout
 import { Box, VStack, Text, Icon, Flex, Divider, Avatar } from '@chakra-ui/react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useContext } from 'react'
@@ -26,6 +27,7 @@ export default function Sidebar() {
   const { user, logout } = useContext(UserContext)
   const navigate = useNavigate()
 
+  // clear httpOnly session cookie then local user state
   const handleLogout = async () => {
     try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }) } catch {}
     logout()

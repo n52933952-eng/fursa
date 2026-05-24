@@ -18,6 +18,9 @@ const io = new Server(server, {
 
 const userSocketMap = {}
 
+/** @fileoverview Realtime Socket.IO server, rooms, and event helpers. */
+
+/** Look up connected user's socket ID by user ID. */
 export const getRecipientSocketId = (recipientId) => {
     if (recipientId == null) return null
     const key = String(recipientId)
@@ -26,16 +29,17 @@ export const getRecipientSocketId = (recipientId) => {
 }
 
 // Broadcast an event to all connected admin sockets (admin-room)
+/** Emit event to all connected admin dashboard clients. */
 export const emitToAdmins = (event, data) => {
     io.to('admin-room').emit(event, data)
 }
 
-/** Freelancers browsing open projects join this room */
+/** Emit event to all freelancers browsing open projects. */
 export const emitToFreelancers = (event, data) => {
     io.to('freelancers-room').emit(event, data)
 }
 
-/** Per-client room: `client:<userId>` — multi-device + targeted updates */
+/** Emit event to a specific client's room by user ID. */
 export const emitToClientRoom = (clientUserId, event, data) => {
     if (clientUserId == null) return
     io.to(`client:${String(clientUserId)}`).emit(event, data)

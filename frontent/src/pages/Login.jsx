@@ -1,3 +1,4 @@
+// admin login — cookie session via /api/auth/login
 import { Box, Flex, VStack, Text, Input, Button, FormControl, FormLabel, useToast, Icon, IconButton } from '@chakra-ui/react'
 import { useState, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -20,7 +21,7 @@ export default function Login() {
     try {
       const { data } = await axios.post('/api/auth/login', form, { withCredentials: true })
       login(data)
-      navigate('/')
+      navigate('/') // App guard sends admins to /admin anyway
     } catch (err) {
       toast({ title: err.response?.data?.error || 'Login failed', status: 'error', duration: 3000 })
     } finally {

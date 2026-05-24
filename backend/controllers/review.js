@@ -1,6 +1,9 @@
 import Review from '../models/Review.js'
 import User from '../models/User.js'
 
+/** @fileoverview Freelancer reviews and ratings. */
+
+/** Submit a review and update freelancer average rating. */
 export const createReview = async (req, res) => {
     try {
         const { revieweeId, projectId, rating, comment } = req.body
@@ -31,6 +34,7 @@ export const createReview = async (req, res) => {
     }
 }
 
+/** List reviews received by a user. */
 export const getReviews = async (req, res) => {
     try {
         const reviews = await Review.find({ revieweeId: req.params.userId })

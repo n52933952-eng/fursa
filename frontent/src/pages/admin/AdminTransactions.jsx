@@ -1,3 +1,4 @@
+// financial monitor — tx feed + 10% fee rollup from release types
 import {
   Box, Flex, Text, Icon, Badge, HStack, Avatar,
   Table, Thead, Tbody, Tr, Th, Td, Spinner, SimpleGrid, Select
@@ -32,7 +33,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   )
 }
 
-// Build monthly chart data from raw transactions (last 6 months)
+// bucket raw txs into last 6 months — fees = 10% of release amounts
 function buildMonthlyData(transactions) {
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   const now = new Date()
@@ -93,7 +94,7 @@ export default function AdminTransactions() {
       if (type === 'newTransaction') {
         setTransactions(prev => {
           const next = [data, ...prev]
-          setMonthlyData(buildMonthlyData(next))
+          setMonthlyData(buildMonthlyData(next)) // keep chart in sync
           return next
         })
       }

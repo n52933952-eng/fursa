@@ -32,7 +32,7 @@ import invoiceRoute from './routes/invoice.js'
 import contractRoute from './routes/contract.js'
 import { initializeFCM } from './services/fcm.js'
 
-
+// ─── Express middleware ───────────────────────────────────────────────────────
 app.use(express.json())
 app.use(cookieParser())
 app.use(cors({
@@ -45,10 +45,12 @@ app.use(cors({
     credentials: true
 }))
 
+// ─── Database connection ──────────────────────────────────────────────────────
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("DB connected"))
     .catch((error) => console.log(error))
 
+// ─── API routes ───────────────────────────────────────────────────────────────
 app.use("/api/auth", authRoute)
 app.use("/api/user", userRoute)
 app.use("/api/project", projectRoute)
@@ -68,6 +70,7 @@ app.use("/api/invoice", invoiceRoute)
 app.use("/api/contract", contractRoute)
 app.use("/uploads", express.static("uploads"))
 
+// ─── Frontend static files (production) ───────────────────────────────────────
 // Serve frontend — go up one level from backend/ to find frontent/dist
 import fs from 'fs'
 const frontendDist = path.join(__dirname, '..', 'frontent', 'dist')
@@ -80,11 +83,13 @@ if (fs.existsSync(frontendDist)) {
     app.get('/', (req, res) => res.json({ message: 'Fursa API is running 🚀', version: '1.0.0' }))
 }
 
+// ─── Push notifications (FCM) ─────────────────────────────────────────────────
 // Initialize Firebase push notifications (same env pattern as thredtrain: FIREBASE_SERVICE_ACCOUNT or file)
 console.log('🔍 [FCM] FIREBASE_SERVICE_ACCOUNT set:', !!process.env.FIREBASE_SERVICE_ACCOUNT)
 console.log('🔍 [FCM] FIREBASE_SERVICE_ACCOUNT length:', process.env.FIREBASE_SERVICE_ACCOUNT?.length || 0)
 initializeFCM()
 
+// ─── Start HTTP + Socket.IO server ────────────────────────────────────────────
 server.listen(process.env.PORT || 5000, () => {
     console.log(`server is running on port ${process.env.PORT || 5000}`)
 })

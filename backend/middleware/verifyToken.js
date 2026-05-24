@@ -1,6 +1,9 @@
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 
+/** @fileoverview JWT auth middleware — cookie or Bearer token. */
+
+/** Verify JWT, load user, and attach to request. */
 export const verifyToken = async (req, res, next) => {
     try {
         // Web dashboard sends cookie; mobile app sends Authorization: Bearer <token>

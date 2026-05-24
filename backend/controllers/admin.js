@@ -4,6 +4,9 @@ import Transaction from '../models/Transaction.js'
 import Dispute from '../models/Dispute.js'
 import { PLATFORM_FEE_RATE, PLATFORM_FEE_PERCENT } from '../config/platformFee.js'
 
+/** @fileoverview Admin dashboard stats, users, disputes, and transactions. */
+
+/** Return platform overview counts and revenue estimates. */
 export const getStats = async (req, res) => {
     try {
         const startOfMonth = new Date()
@@ -40,6 +43,7 @@ export const getStats = async (req, res) => {
     }
 }
 
+/** Return monthly revenue and user growth charts. */
 export const getMonthlyRevenue = async (req, res) => {
     try {
         const sixMonthsAgo = new Date()
@@ -96,6 +100,7 @@ export const getMonthlyRevenue = async (req, res) => {
     }
 }
 
+/** Return project counts grouped by category. */
 export const getProjectsByCategory = async (req, res) => {
     try {
         const data = await Project.aggregate([
@@ -109,6 +114,7 @@ export const getProjectsByCategory = async (req, res) => {
     }
 }
 
+/** List recent platform transactions with user details. */
 export const getAllTransactions = async (req, res) => {
     try {
         const transactions = await Transaction.find()
@@ -123,6 +129,7 @@ export const getAllTransactions = async (req, res) => {
     }
 }
 
+/** List all users except passwords. */
 export const getAllUsers = async (req, res) => {
     try {
         const users = await User.find().select("-password").sort({ createdAt: -1 })
@@ -132,6 +139,7 @@ export const getAllUsers = async (req, res) => {
     }
 }
 
+/** Toggle banned status for a user account. */
 export const banUser = async (req, res) => {
     try {
         const user = await User.findById(req.params.id)
@@ -145,6 +153,7 @@ export const banUser = async (req, res) => {
     }
 }
 
+/** List all disputes with participant details. */
 export const getAllDisputes = async (req, res) => {
     try {
         const disputes = await Dispute.find()
@@ -158,6 +167,7 @@ export const getAllDisputes = async (req, res) => {
     }
 }
 
+/** Mark dispute resolved and complete the project. */
 export const resolveDispute = async (req, res) => {
     try {
         const { adminNote } = req.body

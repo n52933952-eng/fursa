@@ -1,5 +1,8 @@
 import Notification from '../models/Notification.js'
 
+/** @fileoverview In-app notifications read status for users. */
+
+/** List recent notifications for logged-in user. */
 export const getNotifications = async (req, res) => {
     try {
         const notifications = await Notification.find({ userId: req.user._id })
@@ -10,6 +13,7 @@ export const getNotifications = async (req, res) => {
     }
 }
 
+/** Mark all user notifications as read. */
 export const markAllRead = async (req, res) => {
     try {
         await Notification.updateMany({ userId: req.user._id }, { read: true })
@@ -19,6 +23,7 @@ export const markAllRead = async (req, res) => {
     }
 }
 
+/** Mark a single notification as read. */
 export const markOneRead = async (req, res) => {
     try {
         await Notification.findOneAndUpdate(

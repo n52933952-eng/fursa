@@ -1,3 +1,4 @@
+// logged-in user + notifications — persisted in localStorage
 import { createContext, useState } from "react"
 
 export const UserContext = createContext({})

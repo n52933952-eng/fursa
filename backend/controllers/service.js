@@ -1,5 +1,8 @@
 import Service from '../models/Service.js'
 
+/** @fileoverview Freelancer service listings browse and manage. */
+
+/** Create a new freelancer service listing. */
 export const createService = async (req, res) => {
     try {
         const { title, description, category, price, deliveryTime, tags } = req.body
@@ -14,6 +17,7 @@ export const createService = async (req, res) => {
     }
 }
 
+/** Browse active services with optional filters. */
 export const getServices = async (req, res) => {
     try {
         const { category, minPrice, maxPrice, search } = req.query
@@ -34,6 +38,7 @@ export const getServices = async (req, res) => {
     }
 }
 
+/** Get single service with freelancer profile. */
 export const getServiceById = async (req, res) => {
     try {
         const service = await Service.findById(req.params.id)
@@ -45,6 +50,7 @@ export const getServiceById = async (req, res) => {
     }
 }
 
+/** Delete a service owned by the freelancer. */
 export const deleteService = async (req, res) => {
     try {
         const service = await Service.findById(req.params.id)

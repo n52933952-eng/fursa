@@ -2,6 +2,8 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 
+/** @fileoverview Multer upload configs for avatars, files, and documents. */
+
 const createStorage = (folder) => multer.diskStorage({
     destination: (req, file, cb) => {
         const dir = `uploads/${folder}`
@@ -53,11 +55,15 @@ const avatarFileFilter = (req, file, cb) => {
     cb(new Error('File type not allowed'))
 }
 
+/** Profile avatar upload — max 5MB, images only. */
 export const uploadAvatar = multer({
     storage: avatarStorage,
     limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: avatarFileFilter,
 })
+/** Portfolio file upload — max 20MB. */
 export const uploadPortfolio = multer({ storage: createStorage('portfolio'), limits: { fileSize: 20 * 1024 * 1024 }, fileFilter })
+/** Project deliverable upload — max 50MB. */
 export const uploadDeliverable = multer({ storage: createStorage('deliverables'), limits: { fileSize: 50 * 1024 * 1024 }, fileFilter })
+/** Document upload — max 10MB. */
 export const uploadDocument = multer({ storage: createStorage('documents'), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter })
