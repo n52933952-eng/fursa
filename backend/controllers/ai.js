@@ -1,4 +1,11 @@
 import Project from '../models/Project.js'
+import {
+    detectProjectSize,
+    historicalBudgetStats,
+    buildPricingAnchor,
+    normalizePricing,
+    anchorFallback,
+} from '../config/smartPricing.js'
 
 /** @fileoverview AI matchmaking, writing, pricing, skills, and chat assistant. */
 
@@ -27,9 +34,10 @@ function resolvedGroqModel() {
 }
 
 /** Send chat messages to Groq and return assistant text. */
-async function groqChatCompletion(messages) {
+async function groqChatCompletion(messages, options = {}) {
     const key = requireGroqKey()
     const model = resolvedGroqModel()
+    const temperature = typeof options.temperature === 'number' ? options.temperature : 0.65
     const res = await fetch(GROQ_URL, {
         method: 'POST',
         headers: {
@@ -39,8 +47,8 @@ async function groqChatCompletion(messages) {
         body: JSON.stringify({
             model,
             messages,
-            max_tokens: 2048,
-            temperature: 0.65,
+            max_tokens: options.max_tokens ?? 2048,
+            temperature,
         }),
     })
     const data = await res.json().catch(() => ({}))
@@ -156,55 +164,76 @@ AR: [اكتب 3-4 جمل واضحة واحترافية باللغة العربي
 /** Suggest project budget range from category and history. */
 export const suggestPrice = async (req, res) => {
     try {
-        const { category, description, skills } = req.body
+        const { category, description, skills, title, budgetType: rawBudgetType } = req.body
 
         if (!category) {
             return res.status(400).json({ error: 'Please provide a category' })
         }
 
+        const budgetType = rawBudgetType === 'hourly' ? 'hourly' : 'fixed'
+        const descText = String(description || '').trim()
+        const titleText = String(title || '').trim()
+        const size = detectProjectSize(titleText, descText, skills)
+
         const similar = await Project.find({
             category,
-            status: 'completed',
+            status: { $in: ['completed', 'open', 'in-progress'] },
+            budgetType,
+            budget: { $gt: 0 },
         })
-            .select('budget')
-            .limit(20)
+            .select('budget budgetType')
+            .sort({ createdAt: -1 })
+            .limit(40)
 
-        const avgBudget =
-            similar.length > 0
-                ? Math.round(similar.reduce((sum, p) => sum + (p.budget || 0), 0) / similar.length)
-                : null
+        const historical = historicalBudgetStats(similar, budgetType)
+        const anchor = buildPricingAnchor({ category, budgetType, size, historical })
+
+        const unitLabel = budgetType === 'hourly' ? 'USD per hour' : 'USD total fixed price'
+        const histLine = historical
+            ? `Platform data (${historical.count} projects): median $${historical.median}, typical range $${historical.min}–$${historical.max}`
+            : 'Not enough platform history — use MENA freelance market rates below'
 
         const prompt = `
-You are a pricing expert for a freelancing marketplace in the Arab region.
+You are a pricing expert for Fursa, a freelancing marketplace in the Middle East / Arab region.
+Prices must be realistic for clients in Saudi Arabia, UAE, Egypt, Jordan, etc. — NOT US/Western agency rates.
+Use ${unitLabel}.
 
-Project details:
+Project:
 - Category: ${category}
-- Description: ${description || 'Not provided'}
-- Skills needed: ${Array.isArray(skills) && skills.length > 0 ? skills.join(', ') : 'Not specified'}
-- Historical average from similar completed projects: ${avgBudget ? '$' + avgBudget : 'No data available'}
+- Title: ${titleText || 'Not provided'}
+- Description: ${descText || 'Not provided'}
+- Skills: ${Array.isArray(skills) && skills.length > 0 ? skills.join(', ') : 'Not specified'}
+- Estimated scope: ${size} (${size === 'small' ? 'quick/simple task' : size === 'large' ? 'complex/multi-part' : 'standard job'})
 
-Suggest a realistic price range in USD. Return ONLY valid JSON (no markdown, no explanation):
-{"min": 100, "max": 500, "recommended": 250, "reason": "Short 1-sentence explanation"}
+${histLine}
+
+STRICT bounds you MUST respect (do not exceed):
+- min: ${anchor.min}
+- max: ${anchor.max}
+- recommended should be near: ${anchor.recommended}
+
+Rules:
+- Small/simple tasks → lower end of range
+- Large/complex tasks → upper-mid range (rarely hit max)
+- Writing/translation are usually cheaper than full development
+- Return integers only
+
+Return ONLY valid JSON (no markdown):
+{"min": number, "max": number, "recommended": number, "reason": "One short sentence in plain English"}
         `.trim()
 
-        const text = await groqChatCompletion([{ role: 'user', content: prompt }])
+        const text = await groqChatCompletion(
+            [{ role: 'user', content: prompt }],
+            { temperature: 0.2, max_tokens: 512 },
+        )
         const pricing = parseJSON(text)
+        const normalized = normalizePricing(pricing, anchor, budgetType)
 
         if (!pricing || typeof pricing.recommended !== 'number') {
-            const fallbacks = {
-                Design: { min: 100, max: 800, recommended: 300, reason: 'Based on typical design project rates' },
-                Development: { min: 200, max: 2000, recommended: 700, reason: 'Based on typical development project rates' },
-                Writing: { min: 50, max: 400, recommended: 150, reason: 'Based on typical writing project rates' },
-                Marketing: { min: 100, max: 600, recommended: 250, reason: 'Based on typical marketing project rates' },
-                Video: { min: 150, max: 1000, recommended: 400, reason: 'Based on typical video project rates' },
-                Translation: { min: 50, max: 300, recommended: 120, reason: 'Based on typical translation project rates' },
-            }
-            return res.status(200).json(
-                fallbacks[category] || { min: 100, max: 1000, recommended: 350, reason: 'Estimated based on market rates' },
-            )
+            return res.status(200).json(anchorFallback(anchor, budgetType))
         }
 
-        res.status(200).json(pricing)
+        res.status(200).json(normalized)
     } catch (error) {
         console.error('[AI suggestPrice]', error?.message || error)
         const status = error?.code === 'NO_GROQ_KEY' ? 503 : 502
